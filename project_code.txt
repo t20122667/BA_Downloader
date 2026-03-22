@@ -1,0 +1,1284 @@
+main.py:
+from gui import create_gui
+
+if __name__ == "__main__":
+    create_gui()
+
+gui.py:
+import customtkinter as ctk
+import tkinter.filedialog as filedialog
+import tkinter.messagebox as messagebox
+import tkinter as tk  # Для переменных и fallback для текстового поля
+import threading
+
+
+from browser import authorize, check_authorization
+from downloader import (
+    collect_video_links,
+    download_videos_sequential,
+    is_processing_links  # Флаг, если понадобится
+)
+from utils import (
+    open_log_file,
+    open_failed_links_file,
+    open_blacklist_file,
+    select_download_folder,
+    set_log_widgets,
+    DOWNLOAD_FOLDER,
+    load_config,
+    save_config,
+    write_log,         # <–– добавили write_log
+    load_blacklist     # <–– чтобы при сборе ссылок можно было загружать blacklist
+)
+
+import requests
+from bs4 import BeautifulSoup
+
+# Глобальное событие для управления загрузкой видео
+pause_event = threading.Event()
+pause_event.set()
+# Отдельное событие для управления поиском ссылок
+search_pause_event = threading.Event()
+search_pause_event.set()
+
+# Глобальное событие для управления процессом создания чёрного списка (пауза/возобновление)
+blacklist_pause_event = threading.Event()
+blacklist_pause_event.set()
+blacklist_thread = None  # Будет хранить поток создания чёрного списка
+
+def pause_link_processing():
+    pause_event.clear()
+
+def resume_link_processing():
+    pause_event.set()
+
+def open_download_folder(folder_path):
+    import os
+    try:
+        os.startfile(folder_path)
+    except Exception as e:
+        messagebox.showerror("Ошибка", f"Не удалось открыть папку: {e}")
+
+# Функция для постановки процесса загрузки на паузу (после завершения текущего видео)
+def stop_downloading():
+    import downloader
+    downloader.stop_downloading_flag = True
+
+# Новая функция для сохранения вручную введённого пути
+def save_manual_download_folder(var):
+    folder = var.get().strip()
+    if folder:
+        config = load_config()
+        config["download_folder"] = folder
+        save_config(config)
+        # Можно добавить уведомление, если нужно:
+        # messagebox.showinfo("Настройки", f"Путь сохранён: {folder}")
+
+def create_gui():
+    # Настройка внешнего вида customtkinter
+    ctk.set_appearance_mode("dark")  # "dark", "light" или "system"
+    ctk.set_default_color_theme("blue")  # Например, "blue", "green", "dark-blue"
+
+    root = ctk.CTk()
+    root.title("Beautiful Agony Video Downloader")
+    root.geometry("800x1100")  # Немного увеличенная высота для новых кнопок
+
+    # Главный фрейм для размещения всех блоков
+    main_frame = ctk.CTkFrame(master=root)
+    main_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+    #########################################
+    # 1. Блок авторизации
+    auth_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    auth_frame.pack(pady=10, fill="x")
+
+    timer_label = ctk.CTkLabel(master=auth_frame, text="Нажмите 'Пройти авторизацию', чтобы начать.")
+    timer_label.pack(side="left", padx=5, pady=5)
+
+    check_button = ctk.CTkButton(
+        master=auth_frame, text="Проверить авторизацию",
+        state="disabled",
+        command=lambda: check_authorization(timer_label, root)
+    )
+    check_button.pack(side="left", padx=5, pady=5)
+
+    auth_button = ctk.CTkButton(
+        master=auth_frame, text="Пройти авторизацию",
+        command=lambda: on_authorize()
+    )
+    auth_button.pack(side="left", padx=5, pady=5)
+
+    #########################################
+    # 2. Блок настроек
+    settings_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    settings_frame.pack(pady=10, fill="x")
+
+    # 2.1 Выбор папки загрузки
+    folder_frame = ctk.CTkFrame(master=settings_frame, fg_color="transparent")
+    folder_frame.pack(pady=5, fill="x")
+    folder_label = ctk.CTkLabel(master=folder_frame, text="Выберите папку загрузки:")
+    folder_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    # Загружаем сохранённое значение или используем значение по умолчанию
+    config = load_config()
+    default_folder = config.get("download_folder", DOWNLOAD_FOLDER)
+    download_folder_var = tk.StringVar(value=default_folder)
+    folder_entry = ctk.CTkEntry(master=folder_frame, textvariable=download_folder_var, width=300)
+    folder_entry.grid(row=0, column=1, padx=5, pady=5)
+    # При потере фокуса сохраняем вручную введённый путь
+    folder_entry.bind("<FocusOut>", lambda event: save_manual_download_folder(download_folder_var))
+    select_folder_button = ctk.CTkButton(
+        master=folder_frame, text="Выбрать папку",
+        command=lambda: select_download_folder(download_folder_var)
+    )
+    select_folder_button.grid(row=0, column=2, padx=5, pady=5)
+
+    # 2.2 Ввод URL (начальной страницы для сбора ссылок)
+    url_frame = ctk.CTkFrame(master=settings_frame, fg_color="transparent")
+    url_frame.pack(pady=5, fill="x")
+    url_label = ctk.CTkLabel(master=url_frame, text="Введите начальный URL:")
+    url_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    default_url = "https://beautifulagony.com/public/main.php?page=view&mode=latest&offset=0"
+    url_var = tk.StringVar(value=default_url)
+    url_entry = ctk.CTkEntry(master=url_frame, textvariable=url_var, width=400)
+    url_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    #########################################
+    # 3. Блок сбора ссылок (Этап 1)
+    collection_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    collection_frame.pack(pady=10, fill="x")
+
+    stop_empty_pages_var = tk.BooleanVar(value=False)
+
+    def start_collecting():
+        from downloader import is_collecting_links
+        if is_collecting_links:
+            messagebox.showinfo("Информация", "Сбор ссылок уже запущен!")
+            return
+        # Скрываем кнопку "Собрать ссылки на видео"
+        collect_button.grid_remove()
+        # Показываем контейнер с кнопками управления поиском ссылок
+        search_buttons_frame.grid()
+        # Показываем чекбокс для остановки поиска пустых страниц
+        stop_empty_pages_checkbox.grid()
+        threading.Thread(
+            target=lambda: collect_video_links(root, url_var.get(), download_folder_var.get(), search_pause_event, stop_empty_pages_var.get()),
+            daemon=True
+        ).start()
+
+    # Исходная кнопка "Собрать ссылки на видео" (создаём, но скрываем её до авторизации)
+    collect_button = ctk.CTkButton(
+        master=collection_frame, text="Собрать ссылки на видео",
+        command=start_collecting
+    )
+    collect_button.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    collect_button.grid_remove()
+
+    # Создаем контейнер для кнопок управления поиском ссылок
+    search_buttons_frame = ctk.CTkFrame(master=collection_frame, fg_color="transparent")
+    search_buttons_frame.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    search_buttons_frame.grid_remove()  # Скрываем контейнер до начала поиска
+
+    # Кнопка "Возобновить поиск ссылок"
+    resume_search_button = ctk.CTkButton(
+        master=search_buttons_frame,
+        text="Возобновить поиск ссылок",
+        command=lambda: search_pause_event.set()
+    )
+    resume_search_button.pack(side="left", padx=(0, 10))
+    # Кнопка "Остановить поиск ссылок"
+    stop_search_button = ctk.CTkButton(
+        master=search_buttons_frame,
+        text="Остановить поиск ссылок",
+        command=lambda: search_pause_event.clear()
+    )
+    stop_search_button.pack(side="left")
+    # Чекбокс для остановки поиска пустых страниц
+    stop_empty_pages_checkbox = ctk.CTkCheckBox(
+        master=collection_frame,
+        text="Остановить поиск, если 3 страницы подряд без новых ссылок",
+        variable=stop_empty_pages_var
+    )
+    stop_empty_pages_checkbox.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    stop_empty_pages_checkbox.grid_remove()
+
+    #########################################
+    # 4. Блок последовательной загрузки (Этап 2) и управление загрузкой
+    download_control_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    download_control_frame.pack(pady=10, fill="x")
+
+    stop_after_skips_var = tk.BooleanVar(value=False)
+
+    def start_downloading():
+        import downloader
+        downloader.stop_downloading_flag = False
+        download_seq_button.grid_remove()
+        # Показываем контейнер с кнопками "Возобновить загрузку" и "Пауза загрузки"
+        download_buttons_frame.grid()
+        # Показываем кнопку остановки загрузки
+        stop_download_button.grid()
+        threading.Thread(
+            target=lambda: downloader.download_videos_sequential(
+                root,
+                download_folder_var.get(),
+                pause_event,
+                stop_after_skips_var.get(),
+                direction_var.get()
+            ),
+            daemon=True
+        ).start()
+
+    # Кнопка "Скачать видео по ссылкам" (скрыта до авторизации)
+    download_seq_button = ctk.CTkButton(
+        master=download_control_frame,
+        text="Скачать видео по ссылкам",
+        command=start_downloading
+    )
+    download_seq_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    download_seq_button.grid_remove()
+
+    # Контейнер для кнопок управления загрузкой
+    download_buttons_frame = ctk.CTkFrame(master=download_control_frame, fg_color="transparent")
+    download_buttons_frame.grid(row=1, column=0, padx=5, pady=5, sticky="w")
+    download_buttons_frame.grid_remove()  # Скрываем до авторизации
+
+    resume_button = ctk.CTkButton(master=download_buttons_frame, text="Возобновить загрузку", command=lambda: pause_event.set())
+    resume_button.pack(side="left", padx=(0, 10))
+    pause_button = ctk.CTkButton(master=download_buttons_frame, text="Пауза загрузки", command=lambda: pause_event.clear())
+    pause_button.pack(side="left")
+
+    stop_download_button = ctk.CTkButton(
+        master=download_control_frame,
+        text="Остановить загрузку после текущего видео",
+        command=stop_downloading
+    )
+    stop_download_button.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+    stop_download_button.grid_remove()
+
+    stop_after_skips_checkbox = ctk.CTkCheckBox(
+        master=download_control_frame,
+        text="Остановить загрузку после 10 подряд пропущенных видео",
+        variable=stop_after_skips_var
+    )
+    stop_after_skips_checkbox.grid(row=2, column=0, padx=5, pady=5, columnspan=2, sticky="w")
+    stop_after_skips_checkbox.grid_remove()
+
+    direction_var = tk.StringVar(value="сначала")
+    direction_label = ctk.CTkLabel(master=download_control_frame, text="Направление обхода ссылок:")
+    direction_label.grid(row=3, column=0, padx=5, pady=(5, 0), sticky="w")
+    direction_label.grid_remove()
+
+    first_radio = ctk.CTkRadioButton(master=download_control_frame, text="Сначала", variable=direction_var, value="сначала")
+    first_radio.grid(row=3, column=1, padx=5, pady=(5, 0), sticky="w")
+    first_radio.grid_remove()
+
+    last_radio = ctk.CTkRadioButton(master=download_control_frame, text="С конца", variable=direction_var, value="с конца")
+    last_radio.grid(row=3, column=2, padx=5, pady=(5, 0), sticky="w")
+    last_radio.grid_remove()
+
+    #########################################
+    # 5. Блок для открытия файла со ссылками и папки загрузок
+    files_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    files_frame.pack(pady=10, fill="x")
+    open_links_button = ctk.CTkButton(
+        master=files_frame,
+        text="Открыть файл со ссылками",
+        command=lambda: __import__("os").startfile("video_links.txt")
+    )
+    open_links_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    open_downloads_button = ctk.CTkButton(
+        master=files_frame,
+        text="Открыть папку загрузок",
+        command=lambda: open_download_folder(download_folder_var.get())
+    )
+    open_downloads_button.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+    #########################################
+    # 6. Блок работы с чёрным списком
+    blacklist_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    blacklist_frame.pack(pady=10, fill="x")
+
+
+    def create_blacklist_process():
+        """
+        Раньше тут стояли print(), теперь вместо них – write_log,
+        чтобы сообщения шли в текстовое поле лога GUI.
+        """
+        total_blacklist = set()
+        modes = ["males", "transgender"]
+        for mode in modes:
+            page = 0
+            while True:
+                # Блокировка/пауза, если пользователю нужно приостановить
+                blacklist_pause_event.wait()
+
+                offset = page * 20
+                url = f"https://beautifulagony.com/public/main.php?page=view&mode={mode}&offset={offset}"
+                try:
+                    write_log(f"Чёрный список [{mode}] – загрузка страницы offset={offset}...", log_type="info")
+                    response = requests.get(url)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, "html.parser")
+                        elements = soup.find_all("font", class_="agonyid")
+                        page_numbers = set()
+                        for el in elements:
+                            text = el.get_text(strip=True)
+                            if text.startswith("#"):
+                                num = text[1:]
+                                if num.isdigit() and len(num) == 4:
+                                    page_numbers.add(num)
+
+                        if not page_numbers:
+                            write_log(
+                                f"Чёрный список [{mode}] – страница offset={offset} не содержит номеров. Завершаем режим '{mode}'.",
+                                log_type="info")
+                            break
+
+                        write_log(
+                            f"Чёрный список [{mode}] – найдено {len(page_numbers)} номеров на странице offset={offset}.",
+                            log_type="info")
+                        total_blacklist.update(page_numbers)
+                        page += 1
+                    else:
+                        write_log(
+                            f"Чёрный список [{mode}] – не удалось загрузить страницу {url}. Код {response.status_code}.",
+                            log_type="error")
+                        break
+                except Exception as e:
+                    write_log(f"Чёрный список [{mode}] – ошибка при обработке {url}: {e}", log_type="error")
+                    break
+
+        try:
+            # Запись итогового файла blacklist.txt
+            with open("blacklist.txt", "w", encoding="utf-8") as f:
+                for num in sorted(total_blacklist):
+                    f.write(num + "\n")
+
+            write_log(
+                f"Чёрный список создан успешно. Всего найдено {len(total_blacklist)} номеров. Файл: blacklist.txt",
+                log_type="info")
+            messagebox.showinfo("Черный список", f"Черный список создан.\nНайдено чисел: {len(total_blacklist)}")
+        except Exception as e:
+            write_log(f"Ошибка при записи файла blacklist.txt: {e}", log_type="error")
+            messagebox.showerror("Ошибка", f"Не удалось записать blacklist.txt: {e}")
+
+    def start_blacklist_creation():
+        global blacklist_thread
+        create_blacklist_button.grid_remove()
+        stop_blacklist_button.grid()
+        resume_blacklist_button.grid()
+        blacklist_thread = threading.Thread(target=create_blacklist_process, daemon=True)
+        blacklist_thread.start()
+
+    create_blacklist_button = ctk.CTkButton(
+        master=blacklist_frame, text="Создать черный список",
+        command=start_blacklist_creation
+    )
+    create_blacklist_button.grid(row=0, column=0, padx=5, pady=5)
+
+    stop_blacklist_button = ctk.CTkButton(
+        master=blacklist_frame, text="Остановить создание чёрного списка",
+        command=lambda: blacklist_pause_event.clear()
+    )
+    stop_blacklist_button.grid(row=0, column=0, padx=5, pady=5)
+    stop_blacklist_button.grid_remove()
+
+    resume_blacklist_button = ctk.CTkButton(
+        master=blacklist_frame, text="Возобновить создание чёрного списка",
+        command=lambda: blacklist_pause_event.set()
+    )
+    resume_blacklist_button.grid(row=0, column=1, padx=5, pady=5)
+    resume_blacklist_button.grid_remove()
+
+    open_blacklist_button = ctk.CTkButton(
+        master=blacklist_frame,
+        text="Открыть черный список",
+        command=open_blacklist_file
+    )
+    open_blacklist_button.grid(row=0, column=2, padx=5, pady=5)
+
+    #########################################
+    # 7. Блок логов
+    log_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    log_frame.pack(pady=10, fill="both", expand=True)
+    try:
+        log_textbox = ctk.CTkTextbox(master=log_frame, wrap="word", width=600, height=200)
+    except AttributeError:
+        log_textbox = tk.Text(master=log_frame, wrap="word", width=60, height=15)
+    log_textbox.pack(pady=5, padx=5, fill="both", expand=True)
+    log_buttons_frame = ctk.CTkFrame(master=log_frame, fg_color="transparent")
+    log_buttons_frame.pack(pady=5, fill="x")
+    log_file_button = ctk.CTkButton(master=log_buttons_frame, text="Открыть лог файл", command=open_log_file)
+    log_file_button.grid(row=0, column=0, padx=5, pady=5)
+    failed_file_button = ctk.CTkButton(master=log_buttons_frame, text="Открыть файл ошибок",
+                                       command=open_failed_links_file)
+    failed_file_button.grid(row=0, column=1, padx=5, pady=5)
+    show_only_pages_and_errors = tk.BooleanVar(value=False)
+    filter_checkbox = ctk.CTkCheckBox(master=log_buttons_frame, text="Показывать только страницы и ошибки",
+                                      variable=show_only_pages_and_errors)
+    filter_checkbox.grid(row=0, column=2, padx=5, pady=5)
+    set_log_widgets(log_textbox, show_only_pages_and_errors)
+
+    # Функция, которая вызывается при нажатии кнопки "Пройти авторизацию".
+    def on_authorize():
+        authorize(timer_label, check_button, root)
+        collect_button.grid()                # Показываем кнопку сбора ссылок
+        stop_empty_pages_checkbox.grid()       # Показываем чекбокс для остановки поиска пустых страниц
+        download_seq_button.grid()           # Показываем кнопку загрузки видео
+        stop_after_skips_checkbox.grid()     # Показываем чекбокс для остановки загрузки после 10 подряд пропущенных видео
+        # Показываем элементы управления направлением обхода ссылок
+        direction_label.grid()
+        first_radio.grid()
+        last_radio.grid()
+
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    create_gui()
+
+
+downloader.py:
+import os
+import pickle
+import time
+import requests
+import threading
+import tkinter as tk
+import re
+from urllib.parse import urlparse, parse_qs
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from utils import (
+    write_log,
+    save_failed_link,
+    sizes_match,
+    load_blacklist
+)
+
+# Глобальные переменные для отслеживания состояния загрузки
+is_downloading_video = False
+is_processing_links = False
+current_video_url = None
+current_video_name = None
+
+# Глобальный флаг для сбора ссылок (чтобы не запускать несколько потоков)
+is_collecting_links = False
+
+# Глобальный флаг для постановки загрузки на паузу после завершения текущего видео
+stop_downloading_flag = False
+
+
+def transform_video_name(original_name):
+    import os
+    import re
+
+    base_name, ext = os.path.splitext(original_name)
+
+    # Пример: R0626HD-R1
+    m = re.match(r'^[A-Za-z](\d{4})[A-Za-z0-9]+-([A-Za-z]\d+)$', base_name)
+    if not m:
+        return original_name
+
+    participant_number = m.group(1)  # 0626
+    video_part = m.group(2)          # R1
+
+    return f"{participant_number}-{video_part}{ext}"
+
+def find_and_download_video(driver, root, video_link, download_folder, pause_event, blacklist):
+    try:
+        driver.get(video_link)
+        release_date = None  # Не используется в данном случае
+        m = re.search(r'person_number=(\d{4})', video_link)
+        participant_id = m.group(1) if m else None
+
+        from utils import cookies_path
+        if os.path.exists(cookies_path):
+            with open(cookies_path, "rb") as file:
+                cookies = pickle.load(file)
+                for cookie in cookies:
+                    driver.add_cookie(cookie)
+            driver.refresh()
+        video_elements = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located(
+                (By.XPATH, '//div[@id="playerinfo"]//a[@class="download_links_href"]')
+            )
+        )
+        video_options = []
+        for video_element in video_elements:
+            vid_url = video_element.get_attribute("href")
+            try:
+                response = requests.head(vid_url, allow_redirects=True)
+                size_bytes = int(response.headers.get('Content-Length', 0))
+                video_options.append((vid_url, size_bytes))
+            except Exception as e:
+                write_log(f"Ошибка при определении размера для ссылки: {vid_url}. Ошибка: {e}", log_type="error")
+        if video_options:
+            largest_video = max(video_options, key=lambda x: x[1])
+            largest_video_url, largest_video_size = largest_video
+            original_video_name = largest_video_url.split("/")[-1].split("?")[0]
+            video_name = transform_video_name(original_video_name)
+            for num in blacklist:
+                if num in video_name:
+                    write_log(f"Пропуск {video_name}: содержит число {num} из черного списка.", log_type="info")
+                    return
+            # Извлекаем media_id из исходной ссылки
+            parsed = urlparse(video_link)
+            media_id = parse_qs(parsed.query).get("media_id", [None])[0]
+            write_log(f"Начало обработки файла: {video_name}", log_type="video")
+            from tkinter import ttk
+            progress_bar = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate")
+            progress_bar.pack(pady=(5, 10))
+            progress_label = tk.Label(root, text=f"Загрузка {video_name}...", font=("Helvetica", 14))
+            progress_label.pack(pady=(5, 15))
+            download_video(largest_video_url, download_folder, video_name, pause_event,
+                           progress_label, progress_bar, blacklist, driver, media_id)
+            progress_label.destroy()
+            progress_bar.destroy()
+        else:
+            write_log(f"Не найдено доступных версий видео для ссылки: {video_link}", log_type="error")
+    except Exception as e:
+        write_log(f"Ошибка при обработке видео {video_link}: {e}", log_type="error")
+        save_failed_link(video_link)
+
+
+def download_video(video_url, output_folder, video_name, pause_event, progress_label, progress_bar, blacklist, driver=None, media_id=None):
+    for num in blacklist:
+        if num in video_name:
+            write_log(f"Пропуск {video_name}: содержит число {num} из черного списка.", log_type="info")
+            return False
+
+    global is_downloading_video, current_video_url, current_video_name
+    is_downloading_video = True
+    current_video_url = video_url
+    current_video_name = video_name
+
+    write_log(f"Начало обработки файла: {video_name}", log_type="video")
+
+    try:
+        response = requests.get(video_url, stream=True)
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        output_path = os.path.join(output_folder, video_name)
+
+        if os.path.exists(output_path):
+            existing_size = os.path.getsize(output_path)
+            if sizes_match(existing_size, total_size, tolerance_percent=0.003):
+                write_log(f"{video_name} уже скачано.", log_type="info")
+                from utils import synchronize_file_dates
+                if driver is not None and media_id is not None:
+                    from utils import extract_page_release_date
+                    page_release_ts = extract_page_release_date(driver, media_id)
+                    synchronize_file_dates(output_path, page_release_ts)
+                else:
+                    synchronize_file_dates(output_path)
+                write_log(f"Обработка {video_name} завершена.", log_type="info")
+                return False
+            else:
+                write_log(f"{video_name}: размер не совпадает, перекачка.", log_type="info")
+                write_log(f"Размер скачанного файла: {existing_size} байт", log_type="info")
+                write_log(f"Ожидаемый размер файла: {total_size} байт", log_type="info")
+
+        downloaded = 0
+        chunk_size = 8192
+        start_time = time.time()
+        with open(output_path, "wb") as file:
+            for chunk in response.iter_content(chunk_size):
+                pause_event.wait()
+                file.write(chunk)
+                downloaded += len(chunk)
+                progress_percent = int(downloaded / total_size * 100)
+                progress_bar["value"] = progress_percent
+                speed = downloaded / 1024 / max(time.time() - start_time, 1)
+                progress_label.config(text=f"{video_name}: {progress_percent}% @ {speed:.2f} KB/s")
+
+        write_log(f"{video_name} скачано успешно.", log_type="info")
+        from utils import synchronize_file_dates
+        if driver is not None and media_id is not None:
+            from utils import extract_page_release_date
+            page_release_ts = extract_page_release_date(driver, media_id)
+            synchronize_file_dates(output_path, page_release_ts)
+        else:
+            synchronize_file_dates(output_path)
+        write_log(f"Обработка {video_name} завершена.", log_type="info")
+        return True
+    except Exception as e:
+        write_log(f"Ошибка при скачивании {video_name}: {e}", log_type="error")
+        save_failed_link(video_url)
+        return False
+    finally:
+        is_downloading_video = False
+
+
+def collect_video_links(root, start_url, download_folder, search_pause_event, stop_on_empty_pages=False):
+    global is_collecting_links
+    if is_collecting_links:
+        write_log("Сбор ссылок уже запущен!", log_type="info")
+        return
+    is_collecting_links = True
+
+    video_links_file = "video_links.txt"
+    existing_links = set()
+    if os.path.exists(video_links_file):
+        with open(video_links_file, "r", encoding="utf-8") as f:
+            for line in f:
+                link = line.strip()
+                if link:
+                    existing_links.add(link)
+    links_collected = list(existing_links)
+
+    from urllib.parse import urlparse, parse_qs
+    parsed_url = urlparse(start_url)
+    query_params = parse_qs(parsed_url.query)
+    current_offset = int(query_params.get("offset", [0])[0])
+    mode = query_params.get("mode", ["latest"])[0]
+
+    base_url = f"https://beautifulagony.com/public/main.php?page=view&mode={mode}&offset={{}}"
+    current_url = base_url.format(current_offset)
+
+    empty_page_count = 0
+    new_insert_count = 0
+
+    try:
+        from browser import driver
+        while True:
+            search_pause_event.wait()
+            current_count_before = len(existing_links)
+
+            write_log(f"Сбор ссылок, страница: {current_url}", log_type="info")
+            driver.get(current_url)
+
+            # Ищем все <a> с href, содержащим "page=player&out=bkg&media"
+            page_links = driver.find_elements(
+                By.XPATH,
+                '//a[contains(@href, "page=player&out=bkg&media")]'
+            )
+            if not page_links:
+                write_log("На странице не найдено видео ссылок, завершаем сбор.", log_type="info")
+                break
+
+            from utils import load_blacklist
+            blacklist = load_blacklist("blacklist.txt")
+            # write_log(f"Текущий чёрный список: {sorted(blacklist)}", log_type="info")
+
+            for link_element in page_links:
+                video_link = link_element.get_attribute("href")
+                if not video_link:
+                    continue
+                video_link = video_link.strip()
+
+                # Проверка на дублирование
+                if video_link in existing_links:
+                    write_log(f"Ссылка проигнорирована (уже существует): {video_link}", log_type="info")
+                    continue
+
+                # ───────────── Извлекаем "реальный" номер из alt у <img> ─────────────
+                try:
+                    img_elem = link_element.find_element(By.TAG_NAME, "img")
+                    alt_text = img_elem.get_attribute("alt")  # пример: "#5770"
+                    real_number = alt_text.lstrip("#")        # получаем "5770"
+                except Exception as e:
+                    write_log(f"Не удалось получить <img> или alt: {e}", log_type="error")
+                    continue
+
+                write_log(f"Найден реальный номер из alt: {real_number} для {video_link}", log_type="info")
+
+                # Проверяем по чёрному списку именно этот real_number
+                if real_number in blacklist:
+                    write_log(f"Ссылка проигнорирована (чёрный список – real_number={real_number}): {video_link}", log_type="info")
+                    continue
+                # ────────────────────────────────────────────────────────────────────
+
+                # Если всё нормально, добавляем ссылку в начало файла
+                if os.path.exists(video_links_file):
+                    with open(video_links_file, "r", encoding="utf-8") as fr:
+                        file_lines = fr.readlines()
+                else:
+                    file_lines = []
+
+                file_lines.insert(new_insert_count, video_link + "\n")
+                with open(video_links_file, "w", encoding="utf-8") as fw:
+                    fw.writelines(file_lines)
+
+                existing_links.add(video_link)
+                links_collected.insert(new_insert_count, video_link)
+                write_log(f"Новая ссылка добавлена (в начало файла): {video_link}", log_type="info")
+                new_insert_count += 1
+
+            # Проверяем, были ли новые ссылки
+            new_links_count = len(existing_links) - current_count_before
+            if new_links_count == 0:
+                empty_page_count += 1
+            else:
+                empty_page_count = 0
+
+            if stop_on_empty_pages and empty_page_count >= 3:
+                write_log("Остановка поиска: 3 страницы подряд без новых ссылок.", log_type="info")
+                break
+
+            current_offset += 20
+            current_url = base_url.format(current_offset)
+
+        write_log(f"Сбор ссылок завершён, собрано {len(links_collected)} ссылок.", log_type="info")
+    except Exception as e:
+        write_log(f"Ошибка при сборе ссылок: {e}", log_type="error")
+
+    is_collecting_links = False
+    return links_collected
+
+
+def download_videos_sequential(root, download_folder, pause_event, stop_after_skip=False, direction="сначала"):
+    global stop_downloading_flag
+    from utils import load_blacklist, write_log
+    try:
+        with open("video_links.txt", "r", encoding="utf-8") as f:
+            links = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        write_log(f"Ошибка при чтении файла ссылок: {e}", log_type="error")
+        return
+    if not links:
+        write_log("Файл ссылок пуст.", log_type="info")
+        return
+    if direction == "с конца":
+        links.reverse()
+    write_log("Начало последовательной загрузки видео.", log_type="info")
+    blacklist = load_blacklist("blacklist.txt")
+    from browser import driver
+    consecutive_skip_count = 0
+    for link in links:
+        pause_event.wait()
+        result = download_video_sequential(driver, root, link, download_folder, pause_event, blacklist)
+        if result is False:
+            consecutive_skip_count += 1
+        else:
+            consecutive_skip_count = 0
+        if stop_after_skip and consecutive_skip_count >= 10:
+            write_log("Остановка загрузки: 10 подряд пропущенных видео.", log_type="info")
+            break
+        if stop_downloading_flag:
+            write_log("Пауза загрузки по запросу.", log_type="info")
+            pause_event.clear()
+            pause_event.wait()
+            stop_downloading_flag = False
+    write_log("Последовательная загрузка завершена.", log_type="info")
+
+
+def download_video_sequential(driver, root, video_link, download_folder, pause_event, blacklist):
+    try:
+        driver.get(video_link)
+        release_date = None
+
+        m = re.search(r'person_number=(\d{4})', video_link)
+        participant_id = m.group(1) if m else None
+        from utils import cookies_path
+        if os.path.exists(cookies_path):
+            with open(cookies_path, "rb") as file:
+                cookies = pickle.load(file)
+                for cookie in cookies:
+                    driver.add_cookie(cookie)
+            driver.refresh()
+        video_elements = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located(
+                (By.XPATH, '//div[@id="playerinfo"]//a[@class="download_links_href"]')
+            )
+        )
+        video_options = []
+        for video_element in video_elements:
+            vid_url = video_element.get_attribute("href")
+            try:
+                response = requests.head(vid_url, allow_redirects=True)
+                size_bytes = int(response.headers.get('Content-Length', 0))
+                video_options.append((vid_url, size_bytes))
+            except Exception as e:
+                write_log(f"Ошибка при определении размера для ссылки: {vid_url}. Ошибка: {e}", log_type="error")
+        if video_options:
+            largest_video = max(video_options, key=lambda x: x[1])
+            largest_video_url, largest_video_size = largest_video
+            original_video_name = largest_video_url.split("/")[-1].split("?")[0]
+            video_name = transform_video_name(original_video_name)
+            for num in blacklist:
+                if num in video_name:
+                    write_log(f"Пропуск {video_name}: содержит число {num} из черного списка.", log_type="info")
+                    return False
+            # Извлекаем media_id из исходной ссылки
+            parsed = urlparse(video_link)
+            media_id = parse_qs(parsed.query).get("media_id", [None])[0]
+            output_path = os.path.join(download_folder, video_name)
+            if os.path.exists(output_path):
+                existing_size = os.path.getsize(output_path)
+                if sizes_match(existing_size, largest_video_size, tolerance_percent=0.003):
+                    write_log(f"{video_name} уже скачано.", log_type="info")
+                    from utils import synchronize_file_dates, extract_page_release_date
+                    page_release_ts = extract_page_release_date(driver, media_id)
+                    synchronize_file_dates(output_path, page_release_ts)
+                    write_log(f"Обработка {video_name} завершена.", log_type="info")
+                    return False
+            from tkinter import ttk
+            progress_bar = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate")
+            progress_bar.pack(pady=(5, 10))
+            progress_label = tk.Label(root, text=f"Загрузка {video_name}...", font=("Helvetica", 14))
+            progress_label.pack(pady=(5, 15))
+            result = download_video(largest_video_url, download_folder, video_name, pause_event,
+                                      progress_label, progress_bar, blacklist, driver, media_id)
+            progress_label.destroy()
+            progress_bar.destroy()
+            return result
+        else:
+            write_log(f"Не найдено доступных версий видео для ссылки: {video_link}", log_type="error")
+            return False
+    except Exception as e:
+        write_log(f"Ошибка при обработке видео {video_link}: {e}", log_type="error")
+        save_failed_link(video_link)
+        return False
+
+
+browser.py:
+import threading
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from utils import write_log, cookies_path
+
+# Глобальная переменная для драйвера
+driver = None
+
+def authorize(timer_label, check_button, root):
+    def browser_thread():
+        global driver
+        username = "Hadashau"
+        password = "pBSCM266"
+        try:
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service)
+            driver.get("https://beautifulagony.com/public/main.php?page=login")
+            driver.find_element(By.NAME, "username").send_keys(username)
+            driver.find_element(By.NAME, "userpass").send_keys(password)
+            driver.find_element(By.NAME, "userpass").send_keys(Keys.RETURN)
+            timer_label.configure(text="Решите капчу и нажмите 'Проверить авторизацию'!")
+            check_button.configure(state="normal")
+        except Exception as e:
+            write_log(f"Ошибка: {e}", log_type="error")
+            if driver:
+                driver.quit()
+    threading.Thread(target=browser_thread, daemon=True).start()
+
+def check_authorization(timer_label, root):
+    global driver
+    try:
+        current_url = driver.current_url
+        if current_url == "https://beautifulagony.com/public/main.php":
+            write_log("Авторизация завершена.", log_type="info")
+        else:
+            write_log("Не удалось пройти авторизацию. Проверьте капчу.", log_type="error")
+    except Exception as e:
+        write_log(f"Ошибка: {e}", log_type="error")
+
+def save_cookies(driver):
+    import pickle
+    with open(cookies_path, "wb") as file:
+        pickle.dump(driver.get_cookies(), file)
+
+
+utils.py:
+import os
+import json
+import webbrowser
+import tkinter as tk
+import requests
+from bs4 import BeautifulSoup
+import time
+import datetime
+import ctypes
+from email.utils import parsedate_to_datetime
+from mutagen.mp4 import MP4
+import subprocess
+from selenium.webdriver.common.by import By
+
+# ======================= Функции работы с конфигурацией =======================
+CONFIG_FILE = "config.json"
+
+
+def load_config():
+    """Загружает настройки из файла config.json."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                return config
+        except Exception as e:
+            print(f"Ошибка загрузки конфигурации: {e}")
+    return {}
+
+
+def save_config(config):
+    """Сохраняет настройки в файл config.json."""
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Ошибка сохранения конфигурации: {e}")
+
+
+# ======================= Константы и пути к файлам =======================
+DOWNLOAD_FOLDER = r"S:\Test"
+cookies_path = "cookies.pkl"
+log_file_path = "logs.txt"
+failed_links_path = "failed_links.txt"
+
+# Если лог-файл существует, очищаем его
+if os.path.exists(log_file_path):
+    with open(log_file_path, "w", encoding="utf-8") as f:
+        f.write("")
+
+# Виджет для логирования (будет задан из GUI)
+log_text = None
+show_only_pages_and_errors = None
+
+
+# ======================= Функции логирования =======================
+def set_log_widgets(text_widget, checkbox_var):
+    global log_text, show_only_pages_and_errors
+    log_text = text_widget
+    show_only_pages_and_errors = checkbox_var
+    # Цветовое оформление тегов убрано
+
+
+def write_log(message, log_type="info"):
+    """
+    Если log_type равен "video", добавляется дата и время.
+    Для остальных сообщений пишется только само сообщение.
+    """
+    if log_type == "video":
+        timestamp = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+    else:
+        log_entry = message
+
+    # Запись в лог-файл
+    with open(log_file_path, "a", encoding="utf-8") as log_file:
+        log_file.write(f"{log_entry}\n")
+
+    # Если включён режим фильтрации (показывать только страницы и ошибки) — фильтруем
+    if show_only_pages_and_errors is not None and show_only_pages_and_errors.get():
+        if log_type not in ["page", "error"]:
+            return
+
+    # Вывод в текстовый виджет, если он задан
+    if log_text is not None:
+        log_text.insert(tk.END, f"{log_entry}\n")
+        log_text.see(tk.END)
+
+
+def save_failed_link(link):
+    with open(failed_links_path, "a", encoding="utf-8") as failed_file:
+        failed_file.write(f"{link}\n")
+
+
+def open_log_file():
+    if os.path.exists(log_file_path):
+        webbrowser.open(log_file_path)
+    else:
+        from tkinter import messagebox
+        messagebox.showerror("Ошибка", "Файл с логами не найден!")
+
+
+def open_failed_links_file():
+    if os.path.exists(failed_links_path):
+        webbrowser.open(failed_links_path)
+    else:
+        from tkinter import messagebox
+        messagebox.showerror("Ошибка", "Файл с ошибками не найден!")
+
+
+# ======================= Функции для работы с папкой загрузки =======================
+def select_download_folder(download_folder_var):
+    from tkinter import filedialog, messagebox
+    folder = filedialog.askdirectory(initialdir=DOWNLOAD_FOLDER)
+    if folder:
+        download_folder_var.set(folder)
+        config = load_config()
+        config["download_folder"] = folder
+        save_config(config)
+        messagebox.showinfo("Папка загрузок", f"Выбрана папка: {folder}")
+
+
+# ======================= Функции для работы с чёрным списком =======================
+def create_blacklist_for_mode(mode):
+    base_url = "https://beautifulagony.com/public/main.php?page=view&mode={}&offset={}"
+    blacklist = set()
+    page = 0
+    while True:
+        offset = page * 20
+        url = base_url.format(mode, offset)
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                elements = soup.find_all("font", class_="agonyid")
+                page_numbers = set()
+                for el in elements:
+                    text = el.get_text(strip=True)
+                    if text.startswith("#"):
+                        num = text[1:]
+                        if num.isdigit() and len(num) == 4:
+                            page_numbers.add(num)
+                if not page_numbers:
+                    print(f"Режим {mode}: страница с offset={offset} не содержит номеров. Завершаем перебор.")
+                    break
+                print(f"Режим {mode}: найдено {len(page_numbers)} номеров на странице с offset={offset}.")
+                blacklist.update(page_numbers)
+                page += 1
+            else:
+                print(f"Не удалось загрузить страницу: {url}. Статус: {response.status_code}")
+                break
+        except Exception as e:
+            print(f"Ошибка при обработке {url}: {e}")
+            break
+    return blacklist
+
+
+def create_blacklist_from_pages(modes=["males", "transgender"], output_file="blacklist.txt"):
+    total_blacklist = set()
+    for mode in modes:
+        print(f"Начало парсинга для режима: {mode}")
+        mode_blacklist = create_blacklist_for_mode(mode)
+        print(f"Режим {mode}: найдено {len(mode_blacklist)} номеров.")
+        total_blacklist.update(mode_blacklist)
+    try:
+        with open(output_file, "w", encoding="utf-8") as f:
+            for num in sorted(total_blacklist):
+                f.write(num + "\n")
+        print(f"Черный список создан, найдено всего {len(total_blacklist)} номеров. Файл: {output_file}")
+    except Exception as e:
+        print(f"Ошибка при записи файла черного списка: {e}")
+    return total_blacklist
+
+
+def load_blacklist(filename="blacklist.txt"):
+    blacklist = set()
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            for line in f:
+                num = line.strip()
+                if num:
+                    blacklist.add(num)
+    except Exception as e:
+        print(f"Ошибка при загрузке файла черного списка: {e}")
+    return blacklist
+
+
+def open_blacklist_file():
+    if os.path.exists("blacklist.txt"):
+        webbrowser.open("blacklist.txt")
+    else:
+        from tkinter import messagebox
+        messagebox.showerror("Ошибка", "Файл черного списка не найден!")
+
+
+# ======================= Функции для работы с датами и метаданными =======================
+def parse_release_date(date_text):
+    from datetime import datetime
+    try:
+        dt = datetime.strptime(date_text, "%d %b %Y - %H:%M")
+        return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    except Exception as e:
+        print(f"Ошибка парсинга даты: {e}")
+        return None
+
+
+def get_media_created(file_path):
+    timestamp = os.path.getctime(file_path)
+    return time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(timestamp))
+
+
+def get_data_modified(file_path):
+    timestamp = os.path.getmtime(file_path)
+    return time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(timestamp))
+
+
+def set_media_created(file_path, remote_date_str):
+    try:
+        remote_dt = parsedate_to_datetime(remote_date_str)
+    except Exception as e:
+        write_log(f"Ошибка при разборе даты '{remote_date_str}' для файла {file_path}: {e}", log_type="error")
+        return False
+    timestamp = remote_dt.timestamp()
+    os.utime(file_path, (timestamp, timestamp))
+    if os.name == 'nt':
+        FILE_WRITE_ATTRIBUTES = 0x100
+        handle = ctypes.windll.kernel32.CreateFileW(file_path, FILE_WRITE_ATTRIBUTES, 0, None, 3, 0x80, None)
+        if handle == -1:
+            write_log(f"Не удалось открыть файл {file_path} для изменения даты создания.", log_type="error")
+            return False
+        win_time = int((timestamp + 11644473600) * 10000000)
+        ctime = ctypes.c_longlong(win_time)
+        res = ctypes.windll.kernel32.SetFileTime(handle, ctypes.byref(ctime), None, None)
+        ctypes.windll.kernel32.CloseHandle(handle)
+        if not res:
+            write_log(f"Не удалось установить время создания файла {file_path}.", log_type="error")
+        return res
+    return True
+
+
+def set_file_title(file_path, title):
+    try:
+        video = MP4(file_path)
+        video["©nam"] = [title]
+        video.save()
+        return True
+    except Exception as e:
+        write_log(f"Ошибка при установке Title для {file_path}: {e}", log_type="error")
+        return False
+
+
+def set_video_id(file_path, person_id):
+    return set_file_title(file_path, person_id)
+
+
+def sizes_match(actual, expected, tolerance_percent=0.003):
+    diff = abs(actual - expected)
+    allowed = tolerance_percent * expected
+    print(f"[DEBUG] Сравнение размеров: actual = {actual}, expected = {expected}, diff = {diff}, allowed = {allowed}")
+    return diff <= allowed
+
+
+def get_media_created_exiftool(file_path):
+    exiftool_path = r"C:\Portable\Exiftool\exiftool.exe"
+    file_path = os.path.normpath(file_path)
+    command = [exiftool_path, "-s", "-s", "-s", "-MediaCreateDate", file_path]
+    try:
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(command, capture_output=True, text=True, creationflags=creationflags)
+        if result.returncode == 0:
+            media_date_str = result.stdout.strip()
+            if media_date_str:
+                try:
+                    media_dt = datetime.datetime.strptime(media_date_str, "%Y:%m:%d %H:%M:%S")
+                    return media_dt.timestamp()
+                except Exception as parse_ex:
+                    write_log(f"Ошибка парсинга даты из exiftool: {parse_ex}", log_type="error")
+                    return None
+            else:
+                write_log("Exiftool вернул пустую строку для MediaCreateDate", log_type="error")
+                return None
+        else:
+            write_log(f"Exiftool: ошибка извлечения MediaCreateDate: {result.stderr}", log_type="error")
+            return None
+    except Exception as e:
+        write_log(f"Exiftool: исключение при извлечении MediaCreateDate: {e}", log_type="error")
+        return None
+
+
+def update_mp4_internal_dates(file_path, new_date):
+    file_path = os.path.normpath(file_path)
+    exiftool_path = r"C:\Portable\Exiftool\exiftool.exe"
+    command = [
+        exiftool_path,
+        "-overwrite_original",
+        f"-CreateDate={new_date}",
+        f"-ModifyDate={new_date}",
+        f"-MediaCreateDate={new_date}",
+        file_path
+    ]
+    try:
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = subprocess.CREATE_NO_WINDOW
+        result = subprocess.run(command, capture_output=True, text=True, creationflags=creationflags)
+        if result.returncode != 0:
+            write_log(f"Exiftool: ошибка обновления метаданных для '{file_path}': {result.stderr}", log_type="error")
+    except Exception as e:
+        write_log(f"Exiftool: исключение при обновлении метаданных для '{file_path}': {e}", log_type="error")
+
+
+def extract_page_release_date(driver, media_id):
+    """
+    Извлекает дату релиза из блока с классом "playerthumb", где ссылка содержит заданный media_id.
+    Ожидаемый формат даты: "27 Apr 2004 - 1:04"
+    Возвращает timestamp или None, если не удалось извлечь дату.
+    """
+    try:
+        blocks = driver.find_elements(By.CLASS_NAME, "playerthumb")
+    except Exception as e:
+        return None
+    for block in blocks:
+        try:
+            a_elem = block.find_element(By.TAG_NAME, "a")
+            href = a_elem.get_attribute("href")
+            # Проверяем, что в вызове функции содержится нужный media_id
+            if f"global.player.change_vid('{media_id}'" in href:
+                date_div = block.find_element(By.CLASS_NAME, "playerthumb_release_txt")
+                date_text = date_div.text.strip()
+                dt = datetime.datetime.strptime(date_text, "%d %b %Y - %H:%M")
+                return dt.timestamp()
+        except Exception as e:
+            continue
+    return None
+
+
+def synchronize_file_dates(file_path, page_release_ts=None):
+    import re, subprocess
+    from datetime import datetime
+
+    try:
+        # Получаем системные даты
+        creation_time = os.path.getctime(file_path)
+        modification_time = os.path.getmtime(file_path)
+        times = [creation_time, modification_time]
+
+        # Получаем Media Created Date через exiftool
+        media_time = get_media_created_exiftool(file_path)
+        if media_time is not None:
+            times.append(media_time)
+        else:
+            write_log(f"Media Created не найден через exiftool для '{file_path}'", log_type="info")
+
+        # Если передана дата релиза страницы, учитываем её
+        if page_release_ts is not None:
+            times.append(page_release_ts)
+
+        # Определяем минимальную дату
+        min_time = min(times)
+
+        # Устанавливаем системные даты через os.utime
+        os.utime(file_path, (min_time, min_time))
+
+        # Если Windows — обновляем даты через Windows API
+        if os.name == 'nt':
+            from ctypes import wintypes
+            kernel32 = ctypes.windll.kernel32
+
+            class FILETIME(ctypes.Structure):
+                _fields_ = [("dwLowDateTime", wintypes.DWORD),
+                            ("dwHighDateTime", wintypes.DWORD)]
+
+            def unix_to_filetime(t):
+                ft = int((t + 11644473600) * 10000000)
+                low = ft & 0xFFFFFFFF
+                high = ft >> 32
+                return FILETIME(low, high)
+
+            ft_struct = unix_to_filetime(min_time)
+            FILE_WRITE_ATTRIBUTES = 0x100
+            handle = kernel32.CreateFileW(file_path, FILE_WRITE_ATTRIBUTES, 0, None, 3, 0x80, None)
+            if handle not in (-1, 0):
+                res = kernel32.SetFileTime(handle, ctypes.byref(ft_struct), ctypes.byref(ft_struct), ctypes.byref(ft_struct))
+                kernel32.CloseHandle(handle)
+                if not res:
+                    write_log("Ошибка при установке времени через Windows API", log_type="error")
+
+        # Обновляем внутренние MP4 метаданные через exiftool
+        new_date_str_exif = time.strftime("%Y:%m:%d %H:%M:%S", time.gmtime(min_time))
+        update_mp4_internal_dates(file_path, new_date_str_exif)
+
+        # Повторно устанавливаем системные даты после exiftool
+        os.utime(file_path, (min_time, min_time))
+
+    except Exception as e:
+        write_log(f"Ошибка синхронизации дат для '{file_path}': {e}", log_type="error")
+
+
