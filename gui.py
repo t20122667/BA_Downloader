@@ -1,14 +1,17 @@
-import customtkinter as ctk
-import tkinter.filedialog as filedialog
-import tkinter.messagebox as messagebox
-import tkinter as tk
+import os
 import threading
+import tkinter as tk
+import tkinter.messagebox as messagebox
+
+import customtkinter as ctk
+import requests
+from bs4 import BeautifulSoup
 
 from browser import authorize, check_authorization
 from downloader import (
     collect_video_links,
     download_videos_sequential,
-    is_processing_links
+    request_stop_after_current,
 )
 from utils import (
     open_log_file,
@@ -23,11 +26,7 @@ from utils import (
     load_config,
     save_config,
     write_log,
-    load_blacklist
 )
-
-import requests
-from bs4 import BeautifulSoup
 
 # Глобальное событие для управления загрузкой видео
 pause_event = threading.Event()
@@ -40,31 +39,18 @@ search_pause_event.set()
 # Глобальное событие для управления процессом создания чёрного списка
 blacklist_pause_event = threading.Event()
 blacklist_pause_event.set()
+
 blacklist_thread = None
 
 
-def pause_link_processing():
-    pause_event.clear()
-
-
-def resume_link_processing():
-    pause_event.set()
-
-
-def open_download_folder(folder_path):
-    import os
+def open_download_folder(folder_path: str):
     try:
         os.startfile(folder_path)
     except Exception as e:
         messagebox.showerror("Ошибка", f"Не удалось открыть папку: {e}")
 
 
-def stop_downloading():
-    import downloader
-    downloader.stop_downloading_flag = True
-
-
-def save_manual_download_folder(var):
+def save_manual_download_folder(var: tk.StringVar):
     folder = var.get().strip()
     if folder:
         config = load_config()
@@ -92,21 +78,6 @@ def create_gui():
 
     timer_label = ctk.CTkLabel(master=auth_frame, text="Нажмите 'Пройти авторизацию', чтобы начать.")
     timer_label.pack(side="left", padx=5, pady=5)
-
-    check_button = ctk.CTkButton(
-        master=auth_frame,
-        text="Проверить авторизацию",
-        state="disabled",
-        command=lambda: check_authorization(timer_label, root)
-    )
-    check_button.pack(side="left", padx=5, pady=5)
-
-    auth_button = ctk.CTkButton(
-        master=auth_frame,
-        text="Пройти авторизацию",
-        command=lambda: on_authorize()
-    )
-    auth_button.pack(side="left", padx=5, pady=5)
 
     #########################################
     # 2. Блок настроек
@@ -152,6 +123,7 @@ def create_gui():
 
     def start_collecting():
         from downloader import is_collecting_links
+
         if is_collecting_links:
             messagebox.showinfo("Информация", "Сбор ссылок уже запущен!")
             return
@@ -162,9 +134,7 @@ def create_gui():
 
         threading.Thread(
             target=lambda: collect_video_links(
-                root,
                 url_var.get(),
-                download_folder_var.get(),
                 search_pause_event,
                 stop_empty_pages_var.get()
             ),
@@ -186,14 +156,14 @@ def create_gui():
     resume_search_button = ctk.CTkButton(
         master=search_buttons_frame,
         text="Возобновить поиск ссылок",
-        command=lambda: search_pause_event.set()
+        command=search_pause_event.set
     )
     resume_search_button.pack(side="left", padx=(0, 10))
 
     stop_search_button = ctk.CTkButton(
         master=search_buttons_frame,
         text="Остановить поиск ссылок",
-        command=lambda: search_pause_event.clear()
+        command=search_pause_event.clear
     )
     stop_search_button.pack(side="left")
 
@@ -213,14 +183,12 @@ def create_gui():
     stop_after_skips_var = tk.BooleanVar(value=False)
 
     def start_downloading():
-        import downloader
-        downloader.stop_downloading_flag = False
         download_seq_button.grid_remove()
         download_buttons_frame.grid()
         stop_download_button.grid()
 
         threading.Thread(
-            target=lambda: downloader.download_videos_sequential(
+            target=lambda: download_videos_sequential(
                 root,
                 download_folder_var.get(),
                 pause_event,
@@ -245,21 +213,21 @@ def create_gui():
     resume_button = ctk.CTkButton(
         master=download_buttons_frame,
         text="Возобновить загрузку",
-        command=lambda: pause_event.set()
+        command=pause_event.set
     )
     resume_button.pack(side="left", padx=(0, 10))
 
     pause_button = ctk.CTkButton(
         master=download_buttons_frame,
         text="Пауза загрузки",
-        command=lambda: pause_event.clear()
+        command=pause_event.clear
     )
     pause_button.pack(side="left")
 
     stop_download_button = ctk.CTkButton(
         master=download_control_frame,
         text="Остановить загрузку после текущего видео",
-        command=stop_downloading
+        command=request_stop_after_current
     )
     stop_download_button.grid(row=1, column=1, padx=5, pady=5, sticky="w")
     stop_download_button.grid_remove()
@@ -273,6 +241,7 @@ def create_gui():
     stop_after_skips_checkbox.grid_remove()
 
     direction_var = tk.StringVar(value="сначала")
+
     direction_label = ctk.CTkLabel(master=download_control_frame, text="Направление обхода ссылок:")
     direction_label.grid(row=3, column=0, padx=5, pady=(5, 0), sticky="w")
     direction_label.grid_remove()
@@ -303,7 +272,7 @@ def create_gui():
     open_links_button = ctk.CTkButton(
         master=files_frame,
         text="Открыть файл со ссылками",
-        command=lambda: __import__("os").startfile("video_links.txt")
+        command=lambda: os.startfile("video_links.txt")
     )
     open_links_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
@@ -331,8 +300,8 @@ def create_gui():
                 offset = page * 20
                 url = f"https://beautifulagony.com/public/main.php?page=view&mode={mode}&offset={offset}"
                 try:
-                    write_log(f"Чёрный список [{mode}] – загрузка страницы offset={offset}...", log_type="info")
-                    response = requests.get(url)
+                    write_log(f"Чёрный список [{mode}] – загрузка страницы offset={offset}...", log_type="page")
+                    response = requests.get(url, timeout=20)
                     if response.status_code == 200:
                         soup = BeautifulSoup(response.text, "html.parser")
                         elements = soup.find_all("font", class_="agonyid")
@@ -383,10 +352,13 @@ def create_gui():
             safe_showerror("Ошибка", f"Не удалось записать blacklist.txt: {e}")
 
     def start_blacklist_creation():
+        nonlocal create_blacklist_button, stop_blacklist_button, resume_blacklist_button
         global blacklist_thread
+
         create_blacklist_button.grid_remove()
         stop_blacklist_button.grid()
         resume_blacklist_button.grid()
+
         blacklist_thread = threading.Thread(target=create_blacklist_process, daemon=True)
         blacklist_thread.start()
 
@@ -400,7 +372,7 @@ def create_gui():
     stop_blacklist_button = ctk.CTkButton(
         master=blacklist_frame,
         text="Остановить создание чёрного списка",
-        command=lambda: blacklist_pause_event.clear()
+        command=blacklist_pause_event.clear
     )
     stop_blacklist_button.grid(row=0, column=0, padx=5, pady=5)
     stop_blacklist_button.grid_remove()
@@ -408,7 +380,7 @@ def create_gui():
     resume_blacklist_button = ctk.CTkButton(
         master=blacklist_frame,
         text="Возобновить создание чёрного списка",
-        command=lambda: blacklist_pause_event.set()
+        command=blacklist_pause_event.set
     )
     resume_blacklist_button.grid(row=0, column=1, padx=5, pady=5)
     resume_blacklist_button.grid_remove()
@@ -455,8 +427,7 @@ def create_gui():
 
     set_log_widgets(log_textbox, show_only_pages_and_errors)
 
-    def on_authorize():
-        authorize(timer_label, check_button, root)
+    def show_post_auth_controls():
         collect_button.grid()
         stop_empty_pages_checkbox.grid()
         download_seq_button.grid()
@@ -464,6 +435,24 @@ def create_gui():
         direction_label.grid()
         first_radio.grid()
         last_radio.grid()
+
+    def on_authorize():
+        authorize(timer_label, check_button)
+
+    check_button = ctk.CTkButton(
+        master=auth_frame,
+        text="Проверить авторизацию",
+        state="disabled",
+        command=lambda: check_authorization(timer_label, on_success=show_post_auth_controls)
+    )
+    check_button.pack(side="left", padx=5, pady=5)
+
+    auth_button = ctk.CTkButton(
+        master=auth_frame,
+        text="Пройти авторизацию",
+        command=on_authorize
+    )
+    auth_button.pack(side="left", padx=5, pady=5)
 
     root.mainloop()
 

@@ -1,42 +1,21 @@
-import os
+import ctypes
+import datetime
 import json
-import webbrowser
+import os
+import queue
+import subprocess
+import time
 import tkinter as tk
+import webbrowser
+from email.utils import parsedate_to_datetime
+
 import requests
 from bs4 import BeautifulSoup
-import time
-import datetime
-import ctypes
-import queue
-from email.utils import parsedate_to_datetime
 from mutagen.mp4 import MP4
-import subprocess
 from selenium.webdriver.common.by import By
 
 # ======================= Функции работы с конфигурацией =======================
 CONFIG_FILE = "config.json"
-
-
-def load_config():
-    """Загружает настройки из файла config.json."""
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                return config
-        except Exception as e:
-            print(f"Ошибка загрузки конфигурации: {e}")
-    return {}
-
-
-def save_config(config):
-    """Сохраняет настройки в файл config.json."""
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"Ошибка сохранения конфигурации: {e}")
-
 
 # ======================= Константы и пути к файлам =======================
 DOWNLOAD_FOLDER = r"S:\Test"
@@ -61,7 +40,6 @@ _ui_poller_started = False
 
 # ======================= Потокобезопасная работа с GUI =======================
 def set_gui_root(root):
-    """Сохраняет root и запускает обработчик задач GUI."""
     global gui_root
     gui_root = root
     _start_ui_poller()
@@ -69,6 +47,7 @@ def set_gui_root(root):
 
 def _start_ui_poller():
     global _ui_poller_started
+
     if gui_root is None or _ui_poller_started:
         return
 
@@ -142,17 +121,34 @@ def write_log(message, log_type="info"):
     else:
         log_entry = message
 
-    # Запись в лог-файл
     with open(log_file_path, "a", encoding="utf-8") as log_file:
         log_file.write(f"{log_entry}\n")
 
-    # Если включён режим фильтрации — фильтруем только вывод в GUI
     if show_only_pages_and_errors is not None and show_only_pages_and_errors.get():
         if log_type not in ["page", "error"]:
             return
 
     if log_text is not None:
         run_on_ui_thread(_append_log_to_widget, log_entry)
+
+
+# ======================= Функции работы с конфигурацией =======================
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            write_log(f"Ошибка загрузки конфигурации: {e}", log_type="error")
+    return {}
+
+
+def save_config(config):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        write_log(f"Ошибка сохранения конфигурации: {e}", log_type="error")
 
 
 def save_failed_link(link):
@@ -179,6 +175,7 @@ def open_failed_links_file():
 # ======================= Функции для работы с папкой загрузки =======================
 def select_download_folder(download_folder_var):
     from tkinter import filedialog, messagebox
+
     folder = filedialog.askdirectory(initialdir=DOWNLOAD_FOLDER)
     if folder:
         download_folder_var.set(folder)
@@ -193,55 +190,77 @@ def create_blacklist_for_mode(mode):
     base_url = "https://beautifulagony.com/public/main.php?page=view&mode={}&offset={}"
     blacklist = set()
     page = 0
+
     while True:
         offset = page * 20
         url = base_url.format(mode, offset)
+
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=20)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "html.parser")
                 elements = soup.find_all("font", class_="agonyid")
                 page_numbers = set()
+
                 for el in elements:
                     text = el.get_text(strip=True)
                     if text.startswith("#"):
                         num = text[1:]
                         if num.isdigit() and len(num) == 4:
                             page_numbers.add(num)
+
                 if not page_numbers:
-                    print(f"Режим {mode}: страница с offset={offset} не содержит номеров. Завершаем перебор.")
+                    write_log(
+                        f"Режим {mode}: страница с offset={offset} не содержит номеров. Завершаем перебор.",
+                        log_type="info"
+                    )
                     break
-                print(f"Режим {mode}: найдено {len(page_numbers)} номеров на странице с offset={offset}.")
+
+                write_log(
+                    f"Режим {mode}: найдено {len(page_numbers)} номеров на странице с offset={offset}.",
+                    log_type="info"
+                )
                 blacklist.update(page_numbers)
                 page += 1
             else:
-                print(f"Не удалось загрузить страницу: {url}. Статус: {response.status_code}")
+                write_log(f"Не удалось загрузить страницу: {url}. Статус: {response.status_code}", log_type="error")
                 break
         except Exception as e:
-            print(f"Ошибка при обработке {url}: {e}")
+            write_log(f"Ошибка при обработке {url}: {e}", log_type="error")
             break
+
     return blacklist
 
 
-def create_blacklist_from_pages(modes=["males", "transgender"], output_file="blacklist.txt"):
+def create_blacklist_from_pages(modes=None, output_file="blacklist.txt"):
+    if modes is None:
+        modes = ["males", "transgender"]
+
     total_blacklist = set()
+
     for mode in modes:
-        print(f"Начало парсинга для режима: {mode}")
+        write_log(f"Начало парсинга для режима: {mode}", log_type="info")
         mode_blacklist = create_blacklist_for_mode(mode)
-        print(f"Режим {mode}: найдено {len(mode_blacklist)} номеров.")
+        write_log(f"Режим {mode}: найдено {len(mode_blacklist)} номеров.", log_type="info")
         total_blacklist.update(mode_blacklist)
+
     try:
         with open(output_file, "w", encoding="utf-8") as f:
             for num in sorted(total_blacklist):
                 f.write(num + "\n")
-        print(f"Черный список создан, найдено всего {len(total_blacklist)} номеров. Файл: {output_file}")
+        write_log(f"Черный список создан, найдено всего {len(total_blacklist)} номеров. Файл: {output_file}", log_type="info")
     except Exception as e:
-        print(f"Ошибка при записи файла черного списка: {e}")
+        write_log(f"Ошибка при записи файла черного списка: {e}", log_type="error")
+
     return total_blacklist
 
 
 def load_blacklist(filename="blacklist.txt"):
     blacklist = set()
+
+    if not os.path.exists(filename):
+        return blacklist
+
     try:
         with open(filename, "r", encoding="utf-8") as f:
             for line in f:
@@ -249,7 +268,8 @@ def load_blacklist(filename="blacklist.txt"):
                 if num:
                     blacklist.add(num)
     except Exception as e:
-        print(f"Ошибка при загрузке файла черного списка: {e}")
+        write_log(f"Ошибка при загрузке файла черного списка: {e}", log_type="error")
+
     return blacklist
 
 
@@ -263,12 +283,11 @@ def open_blacklist_file():
 
 # ======================= Функции для работы с датами и метаданными =======================
 def parse_release_date(date_text):
-    from datetime import datetime
     try:
-        dt = datetime.strptime(date_text, "%d %b %Y - %H:%M")
+        dt = datetime.datetime.strptime(date_text, "%d %b %Y - %H:%M")
         return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
     except Exception as e:
-        print(f"Ошибка парсинга даты: {e}")
+        write_log(f"Ошибка парсинга даты: {e}", log_type="error")
         return None
 
 
@@ -298,12 +317,15 @@ def set_media_created(file_path, remote_date_str):
         if handle == -1:
             write_log(f"Не удалось открыть файл {file_path} для изменения даты создания.", log_type="error")
             return False
+
         win_time = int((timestamp + 11644473600) * 10000000)
         ctime = ctypes.c_longlong(win_time)
         res = ctypes.windll.kernel32.SetFileTime(handle, ctypes.byref(ctime), None, None)
         ctypes.windll.kernel32.CloseHandle(handle)
+
         if not res:
             write_log(f"Не удалось установить время создания файла {file_path}.", log_type="error")
+
         return res
 
     return True
@@ -325,9 +347,15 @@ def set_video_id(file_path, person_id):
 
 
 def sizes_match(actual, expected, tolerance_percent=0.003):
+    if expected <= 0:
+        return False
+
     diff = abs(actual - expected)
     allowed = tolerance_percent * expected
-    print(f"[DEBUG] Сравнение размеров: actual = {actual}, expected = {expected}, diff = {diff}, allowed = {allowed}")
+    write_log(
+        f"[DEBUG] Сравнение размеров: actual={actual}, expected={expected}, diff={diff}, allowed={allowed}",
+        log_type="info"
+    )
     return diff <= allowed
 
 
@@ -335,11 +363,11 @@ def get_media_created_exiftool(file_path):
     exiftool_path = r"C:\Portable\Exiftool\exiftool.exe"
     file_path = os.path.normpath(file_path)
     command = [exiftool_path, "-s", "-s", "-s", "-MediaCreateDate", file_path]
+
     try:
-        creationflags = 0
-        if os.name == "nt":
-            creationflags = subprocess.CREATE_NO_WINDOW
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         result = subprocess.run(command, capture_output=True, text=True, creationflags=creationflags)
+
         if result.returncode == 0:
             media_date_str = result.stdout.strip()
             if media_date_str:
@@ -349,12 +377,13 @@ def get_media_created_exiftool(file_path):
                 except Exception as parse_ex:
                     write_log(f"Ошибка парсинга даты из exiftool: {parse_ex}", log_type="error")
                     return None
-            else:
-                write_log("Exiftool вернул пустую строку для MediaCreateDate", log_type="error")
-                return None
-        else:
-            write_log(f"Exiftool: ошибка извлечения MediaCreateDate: {result.stderr}", log_type="error")
+
+            write_log("Exiftool вернул пустую строку для MediaCreateDate", log_type="error")
             return None
+
+        write_log(f"Exiftool: ошибка извлечения MediaCreateDate: {result.stderr}", log_type="error")
+        return None
+
     except Exception as e:
         write_log(f"Exiftool: исключение при извлечении MediaCreateDate: {e}", log_type="error")
         return None
@@ -363,6 +392,7 @@ def get_media_created_exiftool(file_path):
 def update_mp4_internal_dates(file_path, new_date):
     file_path = os.path.normpath(file_path)
     exiftool_path = r"C:\Portable\Exiftool\exiftool.exe"
+
     command = [
         exiftool_path,
         "-overwrite_original",
@@ -371,11 +401,11 @@ def update_mp4_internal_dates(file_path, new_date):
         f"-MediaCreateDate={new_date}",
         file_path
     ]
+
     try:
-        creationflags = 0
-        if os.name == "nt":
-            creationflags = subprocess.CREATE_NO_WINDOW
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         result = subprocess.run(command, capture_output=True, text=True, creationflags=creationflags)
+
         if result.returncode != 0:
             write_log(f"Exiftool: ошибка обновления метаданных для '{file_path}': {result.stderr}", log_type="error")
     except Exception as e:
@@ -445,6 +475,7 @@ def synchronize_file_dates(file_path, page_release_ts=None):
             ft_struct = unix_to_filetime(min_time)
             FILE_WRITE_ATTRIBUTES = 0x100
             handle = kernel32.CreateFileW(file_path, FILE_WRITE_ATTRIBUTES, 0, None, 3, 0x80, None)
+
             if handle not in (-1, 0):
                 res = kernel32.SetFileTime(
                     handle,
@@ -453,6 +484,7 @@ def synchronize_file_dates(file_path, page_release_ts=None):
                     ctypes.byref(ft_struct)
                 )
                 kernel32.CloseHandle(handle)
+
                 if not res:
                     write_log("Ошибка при установке времени через Windows API", log_type="error")
 
