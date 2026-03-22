@@ -12,6 +12,7 @@ from downloader import (
     collect_video_links,
     download_videos_sequential,
     request_stop_after_current,
+    is_collecting_links,
 )
 from utils import (
     open_log_file,
@@ -22,6 +23,7 @@ from utils import (
     set_gui_root,
     safe_showinfo,
     safe_showerror,
+    run_on_ui_thread,
     DOWNLOAD_FOLDER,
     load_config,
     save_config,
@@ -70,6 +72,9 @@ def create_gui():
 
     main_frame = ctk.CTkFrame(master=root)
     main_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+    collecting_now = False
+    downloading_now = False
 
     #########################################
     # 1. Блок авторизации
@@ -121,25 +126,132 @@ def create_gui():
 
     stop_empty_pages_var = tk.BooleanVar(value=False)
 
-    def start_collecting():
-        from downloader import is_collecting_links
+    #########################################
+    # 4. Блок последовательной загрузки
+    download_control_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
+    download_control_frame.pack(pady=10, fill="x")
 
-        if is_collecting_links:
-            messagebox.showinfo("Информация", "Сбор ссылок уже запущен!")
-            return
+    stop_after_skips_var = tk.BooleanVar(value=False)
 
+    direction_var = tk.StringVar(value="сначала")
+
+    #########################################
+    # Общие helper-функции UI
+    def show_post_auth_controls():
+        collect_button.grid()
+        stop_empty_pages_checkbox.grid()
+        download_seq_button.grid()
+        stop_after_skips_checkbox.grid()
+        direction_label.grid()
+        first_radio.grid()
+        last_radio.grid()
+
+    def set_idle_collection_ui():
+        collect_button.grid()
+        search_buttons_frame.grid_remove()
+
+    def set_running_collection_ui():
         collect_button.grid_remove()
         search_buttons_frame.grid()
-        stop_empty_pages_checkbox.grid()
 
-        threading.Thread(
-            target=lambda: collect_video_links(
-                url_var.get(),
-                search_pause_event,
-                stop_empty_pages_var.get()
-            ),
-            daemon=True
-        ).start()
+    def set_idle_download_ui():
+        download_seq_button.grid()
+        download_buttons_frame.grid_remove()
+        stop_download_button.grid_remove()
+
+    def set_running_download_ui():
+        download_seq_button.grid_remove()
+        download_buttons_frame.grid()
+        stop_download_button.grid()
+
+    def set_base_controls_enabled(enabled: bool):
+        state = "normal" if enabled else "disabled"
+
+        auth_button.configure(state=state)
+        check_button.configure(state=state if enabled else "disabled")
+        select_folder_button.configure(state=state)
+        folder_entry.configure(state=state)
+        url_entry.configure(state=state)
+        stop_empty_pages_checkbox.configure(state=state)
+        stop_after_skips_checkbox.configure(state=state)
+        first_radio.configure(state=state)
+        last_radio.configure(state=state)
+        create_blacklist_button.configure(state=state)
+        open_links_button.configure(state=state)
+        open_downloads_button.configure(state=state)
+        open_blacklist_button.configure(state=state)
+
+    def finish_collecting_ui():
+        nonlocal collecting_now
+        collecting_now = False
+        set_base_controls_enabled(True)
+        set_idle_collection_ui()
+
+    def finish_downloading_ui():
+        nonlocal downloading_now
+        downloading_now = False
+        set_base_controls_enabled(True)
+        set_idle_download_ui()
+
+    def start_collecting():
+        nonlocal collecting_now, downloading_now
+
+        if collecting_now:
+            safe_showinfo("Информация", "Сбор ссылок уже запущен.")
+            return
+
+        if downloading_now:
+            safe_showinfo("Информация", "Сейчас идёт загрузка видео. Дождитесь завершения.")
+            return
+
+        if is_collecting_links:
+            safe_showinfo("Информация", "Сбор ссылок уже запущен.")
+            return
+
+        collecting_now = True
+        set_base_controls_enabled(False)
+        set_running_collection_ui()
+
+        def worker():
+            try:
+                collect_video_links(
+                    url_var.get(),
+                    search_pause_event,
+                    stop_empty_pages_var.get()
+                )
+            finally:
+                run_on_ui_thread(finish_collecting_ui)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def start_downloading():
+        nonlocal collecting_now, downloading_now
+
+        if downloading_now:
+            safe_showinfo("Информация", "Загрузка уже запущена.")
+            return
+
+        if collecting_now:
+            safe_showinfo("Информация", "Сейчас идёт сбор ссылок. Дождитесь завершения.")
+            return
+
+        downloading_now = True
+        set_base_controls_enabled(False)
+        set_running_download_ui()
+
+        def worker():
+            try:
+                download_videos_sequential(
+                    root,
+                    download_folder_var.get(),
+                    pause_event,
+                    stop_after_skips_var.get(),
+                    direction_var.get()
+                )
+            finally:
+                run_on_ui_thread(finish_downloading_ui)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     collect_button = ctk.CTkButton(
         master=collection_frame,
@@ -174,29 +286,6 @@ def create_gui():
     )
     stop_empty_pages_checkbox.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
     stop_empty_pages_checkbox.grid_remove()
-
-    #########################################
-    # 4. Блок последовательной загрузки
-    download_control_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    download_control_frame.pack(pady=10, fill="x")
-
-    stop_after_skips_var = tk.BooleanVar(value=False)
-
-    def start_downloading():
-        download_seq_button.grid_remove()
-        download_buttons_frame.grid()
-        stop_download_button.grid()
-
-        threading.Thread(
-            target=lambda: download_videos_sequential(
-                root,
-                download_folder_var.get(),
-                pause_event,
-                stop_after_skips_var.get(),
-                direction_var.get()
-            ),
-            daemon=True
-        ).start()
 
     download_seq_button = ctk.CTkButton(
         master=download_control_frame,
@@ -239,8 +328,6 @@ def create_gui():
     )
     stop_after_skips_checkbox.grid(row=2, column=0, padx=5, pady=5, columnspan=2, sticky="w")
     stop_after_skips_checkbox.grid_remove()
-
-    direction_var = tk.StringVar(value="сначала")
 
     direction_label = ctk.CTkLabel(master=download_control_frame, text="Направление обхода ссылок:")
     direction_label.grid(row=3, column=0, padx=5, pady=(5, 0), sticky="w")
@@ -426,15 +513,6 @@ def create_gui():
     filter_checkbox.grid(row=0, column=2, padx=5, pady=5)
 
     set_log_widgets(log_textbox, show_only_pages_and_errors)
-
-    def show_post_auth_controls():
-        collect_button.grid()
-        stop_empty_pages_checkbox.grid()
-        download_seq_button.grid()
-        stop_after_skips_checkbox.grid()
-        direction_label.grid()
-        first_radio.grid()
-        last_radio.grid()
 
     def on_authorize():
         authorize(timer_label, check_button)

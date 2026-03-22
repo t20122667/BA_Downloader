@@ -18,6 +18,12 @@ from utils import (
     load_blacklist,
     run_on_ui_thread,
 )
+from browser import begin_driver_session, end_driver_session
+
+# Статусы результата обработки
+DOWNLOAD_STATUS_DOWNLOADED = "downloaded"
+DOWNLOAD_STATUS_SKIPPED = "skipped"
+DOWNLOAD_STATUS_FAILED = "failed"
 
 # Глобальные переменные для отслеживания состояния загрузки
 is_downloading_video = False
@@ -50,31 +56,34 @@ class DownloadProgressUI:
         self.progress_label = None
         self._created_event = threading.Event()
         self._destroyed = False
+        self._creation_failed = False
 
         run_on_ui_thread(self._create_widgets)
 
         if not self._created_event.wait(timeout=5):
+            self._creation_failed = True
             write_log("Не удалось вовремя создать элементы прогресса.", log_type="error")
 
     def _create_widgets(self):
         from tkinter import ttk
 
-        self.progress_bar = ttk.Progressbar(
-            self.root,
-            orient="horizontal",
-            length=400,
-            mode="determinate"
-        )
-        self.progress_bar.pack(pady=(5, 10))
+        try:
+            self.progress_bar = ttk.Progressbar(
+                self.root,
+                orient="horizontal",
+                length=400,
+                mode="determinate"
+            )
+            self.progress_bar.pack(pady=(5, 10))
 
-        self.progress_label = tk.Label(
-            self.root,
-            text=f"Загрузка {self.video_name}...",
-            font=("Helvetica", 14)
-        )
-        self.progress_label.pack(pady=(5, 15))
-
-        self._created_event.set()
+            self.progress_label = tk.Label(
+                self.root,
+                text=f"Загрузка {self.video_name}...",
+                font=("Helvetica", 14)
+            )
+            self.progress_label.pack(pady=(5, 15))
+        finally:
+            self._created_event.set()
 
     def _update_widgets(self, progress_percent, text):
         if self._destroyed:
@@ -87,6 +96,8 @@ class DownloadProgressUI:
             self.progress_label.config(text=text)
 
     def update(self, progress_percent, text):
+        if self._creation_failed:
+            return
         run_on_ui_thread(self._update_widgets, progress_percent, text)
 
     def _destroy_widgets(self):
@@ -139,7 +150,23 @@ def _load_cookies_into_driver(driver):
         except Exception:
             pass
 
-    driver.refresh()
+    try:
+        driver.refresh()
+    except Exception:
+        pass
+
+
+def _head_size(url: str) -> int:
+    """
+    Пытаемся определить размер файла.
+    Если HEAD не дал результат — вернём 0.
+    """
+    try:
+        response = requests.head(url, allow_redirects=True, timeout=20)
+        return int(response.headers.get("Content-Length", 0))
+    except Exception as e:
+        write_log(f"Ошибка при определении размера для ссылки: {url}. Ошибка: {e}", log_type="error")
+        return 0
 
 
 def _prepare_video_download(driver, video_link, blacklist):
@@ -155,12 +182,11 @@ def _prepare_video_download(driver, video_link, blacklist):
     video_options = []
     for video_element in video_elements:
         vid_url = video_element.get_attribute("href")
-        try:
-            response = requests.head(vid_url, allow_redirects=True, timeout=20)
-            size_bytes = int(response.headers.get("Content-Length", 0))
-            video_options.append((vid_url, size_bytes))
-        except Exception as e:
-            write_log(f"Ошибка при определении размера для ссылки: {vid_url}. Ошибка: {e}", log_type="error")
+        if not vid_url:
+            continue
+
+        size_bytes = _head_size(vid_url)
+        video_options.append((vid_url, size_bytes))
 
     if not video_options:
         write_log(f"Не найдено доступных версий видео для ссылки: {video_link}", log_type="error")
@@ -190,7 +216,7 @@ def find_and_download_video(driver, root, video_link, download_folder, pause_eve
     try:
         prepared = _prepare_video_download(driver, video_link, blacklist)
         if prepared is None:
-            return False
+            return DOWNLOAD_STATUS_SKIPPED
 
         progress_ui = DownloadProgressUI(root, prepared["video_name"])
         try:
@@ -210,14 +236,14 @@ def find_and_download_video(driver, root, video_link, download_folder, pause_eve
     except Exception as e:
         write_log(f"Ошибка при обработке видео {video_link}: {e}", log_type="error")
         save_failed_link(video_link)
-        return False
+        return DOWNLOAD_STATUS_FAILED
 
 
 def download_video(video_url, output_folder, video_name, pause_event, progress_ui, blacklist, driver=None, media_id=None):
     for num in blacklist:
         if num in video_name:
             write_log(f"Пропуск {video_name}: содержит число {num} из черного списка.", log_type="info")
-            return False
+            return DOWNLOAD_STATUS_SKIPPED
 
     global is_downloading_video, current_video_url, current_video_name
     is_downloading_video = True
@@ -227,6 +253,8 @@ def download_video(video_url, output_folder, video_name, pause_event, progress_u
     write_log(f"Начало обработки файла: {video_name}", log_type="video")
 
     try:
+        os.makedirs(output_folder, exist_ok=True)
+
         response = requests.get(video_url, stream=True, timeout=60)
         response.raise_for_status()
 
@@ -235,7 +263,7 @@ def download_video(video_url, output_folder, video_name, pause_event, progress_u
 
         if os.path.exists(output_path):
             existing_size = os.path.getsize(output_path)
-            if sizes_match(existing_size, total_size, tolerance_percent=0.003):
+            if total_size > 0 and sizes_match(existing_size, total_size, tolerance_percent=0.003):
                 write_log(f"{video_name} уже скачано.", log_type="info")
                 from utils import synchronize_file_dates
 
@@ -247,7 +275,7 @@ def download_video(video_url, output_folder, video_name, pause_event, progress_u
                     synchronize_file_dates(output_path)
 
                 write_log(f"Обработка {video_name} завершена.", log_type="info")
-                return False
+                return DOWNLOAD_STATUS_SKIPPED
 
             write_log(f"{video_name}: размер не совпадает, перекачка.", log_type="info")
             write_log(f"Размер скачанного файла: {existing_size} байт", log_type="info")
@@ -285,12 +313,12 @@ def download_video(video_url, output_folder, video_name, pause_event, progress_u
             synchronize_file_dates(output_path)
 
         write_log(f"Обработка {video_name} завершена.", log_type="info")
-        return True
+        return DOWNLOAD_STATUS_DOWNLOADED
 
     except Exception as e:
         write_log(f"Ошибка при скачивании {video_name}: {e}", log_type="error")
         save_failed_link(video_url)
-        return False
+        return DOWNLOAD_STATUS_FAILED
 
     finally:
         is_downloading_video = False
@@ -303,14 +331,13 @@ def collect_video_links(start_url, search_pause_event, stop_on_empty_pages=False
         write_log("Сбор ссылок уже запущен!", log_type="info")
         return
 
+    if not begin_driver_session("collect_links"):
+        return
+
     is_collecting_links = True
 
     try:
         from browser import driver
-
-        if driver is None:
-            write_log("Браузер не инициализирован. Сначала пройдите авторизацию.", log_type="error")
-            return
 
         video_links_file = "video_links.txt"
         existing_links_in_file = []
@@ -407,77 +434,89 @@ def collect_video_links(start_url, search_pause_event, stop_on_empty_pages=False
 
     finally:
         is_collecting_links = False
+        end_driver_session("collect_links")
 
 
 def download_videos_sequential(root, download_folder, pause_event, stop_after_skip=False, direction="сначала"):
     global stop_downloading_flag
 
+    if not begin_driver_session("download_videos"):
+        return
+
     try:
         from browser import driver
-
-        if driver is None:
-            write_log("Браузер не инициализирован. Сначала пройдите авторизацию.", log_type="error")
-            return
 
         with open("video_links.txt", "r", encoding="utf-8") as f:
             links = [line.strip() for line in f if line.strip()]
     except Exception as e:
         write_log(f"Ошибка при чтении файла ссылок: {e}", log_type="error")
+        end_driver_session("download_videos")
         return
 
     if not links:
         write_log("Файл ссылок пуст.", log_type="info")
+        end_driver_session("download_videos")
         return
 
-    if direction == "с конца":
-        links.reverse()
+    try:
+        if direction == "с конца":
+            links.reverse()
 
-    stop_downloading_flag = False
+        stop_downloading_flag = False
 
-    write_log("Начало последовательной загрузки видео.", log_type="info")
-    blacklist = load_blacklist("blacklist.txt")
-    consecutive_skip_count = 0
+        write_log("Начало последовательной загрузки видео.", log_type="info")
+        blacklist = load_blacklist("blacklist.txt")
+        consecutive_skip_count = 0
 
-    for link in links:
-        pause_event.wait()
+        for link in links:
+            pause_event.wait()
 
-        result = download_video_sequential(driver, root, link, download_folder, pause_event, blacklist)
+            result = download_video_sequential(driver, root, link, download_folder, pause_event, blacklist)
 
-        if result is False:
-            consecutive_skip_count += 1
-        else:
-            consecutive_skip_count = 0
+            if result == DOWNLOAD_STATUS_SKIPPED:
+                consecutive_skip_count += 1
+            elif result == DOWNLOAD_STATUS_DOWNLOADED:
+                consecutive_skip_count = 0
+            elif result == DOWNLOAD_STATUS_FAILED:
+                write_log("Видео завершилось ошибкой и не учитывается как пропуск.", log_type="info")
 
-        if stop_after_skip and consecutive_skip_count >= 10:
-            write_log("Остановка загрузки: 10 подряд пропущенных видео.", log_type="info")
-            break
+            if stop_after_skip and consecutive_skip_count >= 10:
+                write_log("Остановка загрузки: 10 подряд пропущенных видео.", log_type="info")
+                break
 
-        if stop_downloading_flag:
-            write_log("Загрузка остановлена по запросу после завершения текущего видео.", log_type="info")
-            stop_downloading_flag = False
-            break
+            if stop_downloading_flag:
+                write_log("Загрузка остановлена по запросу после завершения текущего видео.", log_type="info")
+                stop_downloading_flag = False
+                break
 
-    write_log("Последовательная загрузка завершена.", log_type="info")
+        write_log("Последовательная загрузка завершена.", log_type="info")
+
+    finally:
+        end_driver_session("download_videos")
 
 
 def download_video_sequential(driver, root, video_link, download_folder, pause_event, blacklist):
     try:
         prepared = _prepare_video_download(driver, video_link, blacklist)
         if prepared is None:
-            return False
+            return DOWNLOAD_STATUS_SKIPPED
 
         output_path = os.path.join(download_folder, prepared["video_name"])
 
         if os.path.exists(output_path):
             existing_size = os.path.getsize(output_path)
-            if sizes_match(existing_size, prepared["largest_video_size"], tolerance_percent=0.003):
+            if prepared["largest_video_size"] > 0 and sizes_match(
+                existing_size,
+                prepared["largest_video_size"],
+                tolerance_percent=0.003
+            ):
                 write_log(f"{prepared['video_name']} уже скачано.", log_type="info")
                 from utils import synchronize_file_dates, extract_page_release_date
 
                 page_release_ts = extract_page_release_date(driver, prepared["media_id"])
                 synchronize_file_dates(output_path, page_release_ts)
                 write_log(f"Обработка {prepared['video_name']} завершена.", log_type="info")
-                return False
+                return DOWNLOAD_STATUS_SKIPPED
 
         progress_ui = DownloadProgressUI(root, prepared["video_name"])
         try:
@@ -497,4 +536,4 @@ def download_video_sequential(driver, root, video_link, download_folder, pause_e
     except Exception as e:
         write_log(f"Ошибка при обработке видео {video_link}: {e}", log_type="error")
         save_failed_link(video_link)
-        return False
+        return DOWNLOAD_STATUS_FAILED
