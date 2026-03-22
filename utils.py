@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import time
 import datetime
 import ctypes
+import queue
 from email.utils import parsedate_to_datetime
 from mutagen.mp4 import MP4
 import subprocess
@@ -52,19 +53,88 @@ if os.path.exists(log_file_path):
 log_text = None
 show_only_pages_and_errors = None
 
+# Tkinter root и очередь задач для безопасного обновления GUI из потоков
+gui_root = None
+_ui_queue = queue.Queue()
+_ui_poller_started = False
+
+
+# ======================= Потокобезопасная работа с GUI =======================
+def set_gui_root(root):
+    """Сохраняет root и запускает обработчик задач GUI."""
+    global gui_root
+    gui_root = root
+    _start_ui_poller()
+
+
+def _start_ui_poller():
+    global _ui_poller_started
+    if gui_root is None or _ui_poller_started:
+        return
+
+    _ui_poller_started = True
+
+    def process_queue():
+        while True:
+            try:
+                callback, args, kwargs = _ui_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                print(f"Ошибка при обработке GUI-задачи: {e}")
+
+        if gui_root is not None:
+            try:
+                gui_root.after(50, process_queue)
+            except Exception:
+                pass
+
+    gui_root.after(50, process_queue)
+
+
+def run_on_ui_thread(callback, *args, **kwargs):
+    """
+    Безопасно выполняет callback в главном потоке Tkinter.
+    Если root ещё не установлен, выполняет callback сразу.
+    """
+    if gui_root is None:
+        callback(*args, **kwargs)
+        return
+
+    _ui_queue.put((callback, args, kwargs))
+
+
+def safe_showinfo(title, message):
+    from tkinter import messagebox
+    run_on_ui_thread(messagebox.showinfo, title, message)
+
+
+def safe_showerror(title, message):
+    from tkinter import messagebox
+    run_on_ui_thread(messagebox.showerror, title, message)
+
 
 # ======================= Функции логирования =======================
 def set_log_widgets(text_widget, checkbox_var):
     global log_text, show_only_pages_and_errors
     log_text = text_widget
     show_only_pages_and_errors = checkbox_var
-    # Цветовое оформление тегов убрано
+
+
+def _append_log_to_widget(log_entry):
+    if log_text is not None:
+        log_text.insert(tk.END, f"{log_entry}\n")
+        log_text.see(tk.END)
 
 
 def write_log(message, log_type="info"):
     """
     Если log_type равен "video", добавляется дата и время.
     Для остальных сообщений пишется только само сообщение.
+    Лог в GUI пишется только через главный поток Tkinter.
     """
     if log_type == "video":
         timestamp = datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S")
@@ -76,15 +146,13 @@ def write_log(message, log_type="info"):
     with open(log_file_path, "a", encoding="utf-8") as log_file:
         log_file.write(f"{log_entry}\n")
 
-    # Если включён режим фильтрации (показывать только страницы и ошибки) — фильтруем
+    # Если включён режим фильтрации — фильтруем только вывод в GUI
     if show_only_pages_and_errors is not None and show_only_pages_and_errors.get():
         if log_type not in ["page", "error"]:
             return
 
-    # Вывод в текстовый виджет, если он задан
     if log_text is not None:
-        log_text.insert(tk.END, f"{log_entry}\n")
-        log_text.see(tk.END)
+        run_on_ui_thread(_append_log_to_widget, log_entry)
 
 
 def save_failed_link(link):
@@ -220,9 +288,11 @@ def set_media_created(file_path, remote_date_str):
     except Exception as e:
         write_log(f"Ошибка при разборе даты '{remote_date_str}' для файла {file_path}: {e}", log_type="error")
         return False
+
     timestamp = remote_dt.timestamp()
     os.utime(file_path, (timestamp, timestamp))
-    if os.name == 'nt':
+
+    if os.name == "nt":
         FILE_WRITE_ATTRIBUTES = 0x100
         handle = ctypes.windll.kernel32.CreateFileW(file_path, FILE_WRITE_ATTRIBUTES, 0, None, 3, 0x80, None)
         if handle == -1:
@@ -235,6 +305,7 @@ def set_media_created(file_path, remote_date_str):
         if not res:
             write_log(f"Не удалось установить время создания файла {file_path}.", log_type="error")
         return res
+
     return True
 
 
@@ -319,58 +390,51 @@ def extract_page_release_date(driver, media_id):
     """
     try:
         blocks = driver.find_elements(By.CLASS_NAME, "playerthumb")
-    except Exception as e:
+    except Exception:
         return None
+
     for block in blocks:
         try:
             a_elem = block.find_element(By.TAG_NAME, "a")
             href = a_elem.get_attribute("href")
-            # Проверяем, что в вызове функции содержится нужный media_id
             if f"global.player.change_vid('{media_id}'" in href:
                 date_div = block.find_element(By.CLASS_NAME, "playerthumb_release_txt")
                 date_text = date_div.text.strip()
                 dt = datetime.datetime.strptime(date_text, "%d %b %Y - %H:%M")
                 return dt.timestamp()
-        except Exception as e:
+        except Exception:
             continue
+
     return None
 
 
 def synchronize_file_dates(file_path, page_release_ts=None):
-    import re, subprocess
-    from datetime import datetime
-
     try:
-        # Получаем системные даты
         creation_time = os.path.getctime(file_path)
         modification_time = os.path.getmtime(file_path)
         times = [creation_time, modification_time]
 
-        # Получаем Media Created Date через exiftool
         media_time = get_media_created_exiftool(file_path)
         if media_time is not None:
             times.append(media_time)
         else:
             write_log(f"Media Created не найден через exiftool для '{file_path}'", log_type="info")
 
-        # Если передана дата релиза страницы, учитываем её
         if page_release_ts is not None:
             times.append(page_release_ts)
 
-        # Определяем минимальную дату
         min_time = min(times)
-
-        # Устанавливаем системные даты через os.utime
         os.utime(file_path, (min_time, min_time))
 
-        # Если Windows — обновляем даты через Windows API
-        if os.name == 'nt':
+        if os.name == "nt":
             from ctypes import wintypes
             kernel32 = ctypes.windll.kernel32
 
             class FILETIME(ctypes.Structure):
-                _fields_ = [("dwLowDateTime", wintypes.DWORD),
-                            ("dwHighDateTime", wintypes.DWORD)]
+                _fields_ = [
+                    ("dwLowDateTime", wintypes.DWORD),
+                    ("dwHighDateTime", wintypes.DWORD)
+                ]
 
             def unix_to_filetime(t):
                 ft = int((t + 11644473600) * 10000000)
@@ -382,16 +446,18 @@ def synchronize_file_dates(file_path, page_release_ts=None):
             FILE_WRITE_ATTRIBUTES = 0x100
             handle = kernel32.CreateFileW(file_path, FILE_WRITE_ATTRIBUTES, 0, None, 3, 0x80, None)
             if handle not in (-1, 0):
-                res = kernel32.SetFileTime(handle, ctypes.byref(ft_struct), ctypes.byref(ft_struct), ctypes.byref(ft_struct))
+                res = kernel32.SetFileTime(
+                    handle,
+                    ctypes.byref(ft_struct),
+                    ctypes.byref(ft_struct),
+                    ctypes.byref(ft_struct)
+                )
                 kernel32.CloseHandle(handle)
                 if not res:
                     write_log("Ошибка при установке времени через Windows API", log_type="error")
 
-        # Обновляем внутренние MP4 метаданные через exiftool
         new_date_str_exif = time.strftime("%Y:%m:%d %H:%M:%S", time.gmtime(min_time))
         update_mp4_internal_dates(file_path, new_date_str_exif)
-
-        # Повторно устанавливаем системные даты после exiftool
         os.utime(file_path, (min_time, min_time))
 
     except Exception as e:
