@@ -5,10 +5,10 @@ import os
 import queue
 import subprocess
 import time
+import threading
 import tkinter as tk
 import webbrowser
 from email.utils import parsedate_to_datetime
-
 import requests
 from bs4 import BeautifulSoup
 from mutagen.mp4 import MP4
@@ -36,6 +36,10 @@ show_only_pages_and_errors = None
 gui_root = None
 _ui_queue = queue.Queue()
 _ui_poller_started = False
+_video_date_records_lock = threading.Lock()
+
+# Допуск сравнения дат (секунды)
+DATE_SYNC_TOLERANCE_SECONDS = 2.0
 
 
 # ======================= Потокобезопасная работа с GUI =======================
@@ -77,9 +81,10 @@ def _start_ui_poller():
 def run_on_ui_thread(callback, *args, **kwargs):
     """
     Безопасно выполняет callback в главном потоке Tkinter.
-    Если root ещё не установлен, выполняет callback сразу.
+    Если root ещё не установлен ИЛИ вызов уже идёт из главного потока,
+    выполняет callback сразу.
     """
-    if gui_root is None:
+    if gui_root is None or threading.current_thread() is threading.main_thread():
         callback(*args, **kwargs)
         return
 
@@ -414,83 +419,267 @@ def update_mp4_internal_dates(file_path, new_date):
 
 def extract_page_release_date(driver, media_id):
     """
-    Извлекает дату релиза из блока с классом "playerthumb", где ссылка содержит заданный media_id.
-    Ожидаемый формат даты: "27 Apr 2004 - 1:04"
-    Возвращает timestamp или None, если не удалось извлечь дату.
+    Извлекает дату релиза со страницы плеера и трактует её
+    как локальное время текущей системы.
     """
+    import datetime
+
+    if not media_id:
+        return None
+
     try:
-        blocks = driver.find_elements(By.CLASS_NAME, "playerthumb")
+        blocks = driver.find_elements(
+            By.CSS_SELECTOR,
+            ".playerthumb_hd, .playerthumb"
+        )
     except Exception:
         return None
+
+    target_pattern = f"change_vid('{media_id}'"
+
+    # Локальный timezone текущей системы
+    local_tz = datetime.datetime.now().astimezone().tzinfo
 
     for block in blocks:
         try:
             a_elem = block.find_element(By.TAG_NAME, "a")
-            href = a_elem.get_attribute("href")
-            if f"global.player.change_vid('{media_id}'" in href:
-                date_div = block.find_element(By.CLASS_NAME, "playerthumb_release_txt")
-                date_text = date_div.text.strip()
-                dt = datetime.datetime.strptime(date_text, "%d %b %Y - %H:%M")
-                return dt.timestamp()
+            href = (a_elem.get_attribute("href") or "").strip()
+
+            if target_pattern not in href:
+                continue
+
+            date_div = block.find_element(By.CLASS_NAME, "playerthumb_release_txt")
+            date_text = (date_div.text or "").strip()
+            if not date_text:
+                continue
+
+            dt = datetime.datetime.strptime(date_text, "%d %b %Y - %H:%M")
+            dt += datetime.timedelta(hours=5)
+            dt = dt.replace(tzinfo=local_tz)
+            return dt.timestamp()
+
         except Exception:
             continue
 
     return None
 
 
+def _timestamps_match(actual_ts, expected_ts, tolerance_seconds=DATE_SYNC_TOLERANCE_SECONDS):
+    if actual_ts is None or expected_ts is None:
+        return False
+    return abs(float(actual_ts) - float(expected_ts)) <= float(tolerance_seconds)
+
+
+def _set_filesystem_dates(file_path, target_ts):
+    os.utime(file_path, (target_ts, target_ts))
+
+    if os.name == "nt":
+        from ctypes import wintypes
+        kernel32 = ctypes.windll.kernel32
+
+        class FILETIME(ctypes.Structure):
+            _fields_ = [
+                ("dwLowDateTime", wintypes.DWORD),
+                ("dwHighDateTime", wintypes.DWORD)
+            ]
+
+        def unix_to_filetime(t):
+            ft = int((t + 11644473600) * 10000000)
+            low = ft & 0xFFFFFFFF
+            high = ft >> 32
+            return FILETIME(low, high)
+
+        ft_struct = unix_to_filetime(target_ts)
+        FILE_WRITE_ATTRIBUTES = 0x100
+        handle = kernel32.CreateFileW(file_path, FILE_WRITE_ATTRIBUTES, 0, None, 3, 0x80, None)
+
+        if handle not in (-1, 0):
+            res = kernel32.SetFileTime(
+                handle,
+                ctypes.byref(ft_struct),
+                ctypes.byref(ft_struct),
+                ctypes.byref(ft_struct)
+            )
+            kernel32.CloseHandle(handle)
+
+            if not res:
+                write_log("Ошибка при установке времени через Windows API", log_type="error")
+
+
+def _read_current_file_dates(file_path):
+    creation_time = os.path.getctime(file_path)
+    modification_time = os.path.getmtime(file_path)
+    media_time = get_media_created_exiftool(file_path)
+    return creation_time, modification_time, media_time
+
+
+def _log_date_debug(file_path, page_release_ts, creation_time, modification_time, media_time, creation_matches, modification_matches, media_matches):
+    write_log(f"[DEBUG] file={file_path}", log_type="info")
+    write_log(
+        f"[DEBUG] page_release_ts={page_release_ts} -> {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(page_release_ts))}",
+        log_type="info")
+    write_log(
+        f"[DEBUG] creation_time={creation_time} -> {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(creation_time))}",
+        log_type="info")
+    write_log(
+        f"[DEBUG] modification_time={modification_time} -> {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(modification_time))}",
+        log_type="info")
+    write_log(
+        f"[DEBUG] media_time={media_time} -> {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(media_time)) if media_time else 'None'}",
+        log_type="info")
+    write_log(f"[DEBUG] creation_matches={creation_matches}", log_type="info")
+    write_log(f"[DEBUG] modification_matches={modification_matches}", log_type="info")
+    write_log(f"[DEBUG] media_matches={media_matches}", log_type="info")
+
+
+def _build_match_state(file_path, page_release_ts):
+    creation_time, modification_time, media_time = _read_current_file_dates(file_path)
+    creation_matches = _timestamps_match(creation_time, page_release_ts)
+    modification_matches = _timestamps_match(modification_time, page_release_ts)
+    media_matches = True if media_time is None else _timestamps_match(media_time, page_release_ts)
+    return {
+        "creation_time": creation_time,
+        "modification_time": modification_time,
+        "media_time": media_time,
+        "creation_matches": creation_matches,
+        "modification_matches": modification_matches,
+        "media_matches": media_matches,
+    }
+
+
 def synchronize_file_dates(file_path, page_release_ts=None):
     try:
-        creation_time = os.path.getctime(file_path)
-        modification_time = os.path.getmtime(file_path)
-        times = [creation_time, modification_time]
+        if page_release_ts is None:
+            write_log(f"Дата страницы не передана для '{file_path}', даты не изменяются.", log_type="info")
+            return
 
-        media_time = get_media_created_exiftool(file_path)
-        if media_time is not None:
-            times.append(media_time)
-        else:
-            write_log(f"Media Created не найден через exiftool для '{file_path}'", log_type="info")
+        state = _build_match_state(file_path, page_release_ts)
 
-        if page_release_ts is not None:
-            times.append(page_release_ts)
+        if state["media_time"] is None:
+            write_log(
+                f"MediaCreateDate не найден для '{file_path}'. Будет выполнена принудительная запись MP4-метаданных.",
+                log_type="info"
+            )
 
-        min_time = min(times)
-        os.utime(file_path, (min_time, min_time))
+        if state["creation_matches"] and state["modification_matches"] and state["media_matches"]:
+            write_log(
+                f"Даты уже совпадают с датой страницы для '{file_path}', синхронизация не требуется.",
+                log_type="info"
+            )
+            return
 
-        if os.name == "nt":
-            from ctypes import wintypes
-            kernel32 = ctypes.windll.kernel32
+        page_key = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(page_release_ts))
+        write_log(
+            f"Обновление дат для '{file_path}' до даты страницы {page_key}.",
+            log_type="info"
+        )
 
-            class FILETIME(ctypes.Structure):
-                _fields_ = [
-                    ("dwLowDateTime", wintypes.DWORD),
-                    ("dwHighDateTime", wintypes.DWORD)
-                ]
+        new_date_str_exif = time.strftime("%Y:%m:%d %H:%M:%S", time.localtime(page_release_ts))
 
-            def unix_to_filetime(t):
-                ft = int((t + 11644473600) * 10000000)
-                low = ft & 0xFFFFFFFF
-                high = ft >> 32
-                return FILETIME(low, high)
+        for attempt in range(1, 4):
+            _set_filesystem_dates(file_path, page_release_ts)
+            update_mp4_internal_dates(file_path, new_date_str_exif)
+            _set_filesystem_dates(file_path, page_release_ts)
+            time.sleep(0.4)
 
-            ft_struct = unix_to_filetime(min_time)
-            FILE_WRITE_ATTRIBUTES = 0x100
-            handle = kernel32.CreateFileW(file_path, FILE_WRITE_ATTRIBUTES, 0, None, 3, 0x80, None)
+            state = _build_match_state(file_path, page_release_ts)
+            _log_date_debug(
+                file_path,
+                page_release_ts,
+                state["creation_time"],
+                state["modification_time"],
+                state["media_time"],
+                state["creation_matches"],
+                state["modification_matches"],
+                state["media_matches"],
+            )
 
-            if handle not in (-1, 0):
-                res = kernel32.SetFileTime(
-                    handle,
-                    ctypes.byref(ft_struct),
-                    ctypes.byref(ft_struct),
-                    ctypes.byref(ft_struct)
+            if state["creation_matches"] and state["modification_matches"] and state["media_matches"]:
+                write_log(
+                    f"Синхронизация дат для '{file_path}' завершена успешно (попытка {attempt}/3).",
+                    log_type="info"
                 )
-                kernel32.CloseHandle(handle)
+                return
 
-                if not res:
-                    write_log("Ошибка при установке времени через Windows API", log_type="error")
+            write_log(
+                f"Даты для '{file_path}' после попытки {attempt}/3 ещё не полностью совпали, повторяем.",
+                log_type="info"
+            )
 
-        new_date_str_exif = time.strftime("%Y:%m:%d %H:%M:%S", time.gmtime(min_time))
-        update_mp4_internal_dates(file_path, new_date_str_exif)
-        os.utime(file_path, (min_time, min_time))
+        write_log(
+            f"После 3 попыток даты для '{file_path}' всё ещё не полностью синхронизированы.",
+            log_type="error"
+        )
 
     except Exception as e:
         write_log(f"Ошибка синхронизации дат для '{file_path}': {e}", log_type="error")
+
+
+# ======================= Функции сохранения дат видео =======================
+VIDEO_DATE_RECORDS_FILE = "video_date_records.json"
+
+
+def load_video_date_records(records_file=VIDEO_DATE_RECORDS_FILE):
+    if not os.path.exists(records_file):
+        return {}
+
+    with _video_date_records_lock:
+        try:
+            with open(records_file, "r", encoding="utf-8") as f:
+                raw = f.read()
+
+            if not raw.strip():
+                return {}
+
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError as e:
+            write_log(f"Файл дат видео '{records_file}' повреждён или пуст. Будет использован пустой словарь: {e}", log_type="error")
+            return {}
+        except Exception as e:
+            write_log(f"Ошибка загрузки файла дат видео '{records_file}': {e}", log_type="error")
+            return {}
+
+
+def save_video_date_record(video_name, release_ts, records_file=VIDEO_DATE_RECORDS_FILE):
+    """
+    Сохраняет timestamp даты релиза для конкретного видео в JSON-файл.
+    Нужна downloader.py для пометки успешно обработанных файлов.
+    """
+    video_name = (video_name or "").strip()
+    if not video_name:
+        return False
+
+    with _video_date_records_lock:
+        try:
+            records = {}
+            if os.path.exists(records_file):
+                with open(records_file, "r", encoding="utf-8") as f:
+                    raw = f.read()
+                if raw.strip():
+                    loaded = json.loads(raw)
+                    if isinstance(loaded, dict):
+                        records = loaded
+
+            records[video_name] = float(release_ts) if release_ts is not None else None
+
+            temp_file = records_file + ".tmp"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(records, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+
+            os.replace(temp_file, records_file)
+            return True
+        except json.JSONDecodeError as e:
+            write_log(
+                f"Ошибка чтения файла дат видео '{records_file}' перед сохранением '{video_name}': {e}",
+                log_type="error"
+            )
+            return False
+        except Exception as e:
+            write_log(
+                f"Ошибка сохранения даты видео '{video_name}' в файл '{records_file}': {e}",
+                log_type="error"
+            )
+            return False

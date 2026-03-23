@@ -22,7 +22,7 @@ def save_cookies(current_driver):
         pickle.dump(current_driver.get_cookies(), file)
 
 
-def begin_driver_session(task_name: str) -> bool:
+def begin_driver_session(task_name: str, quiet: bool = False) -> bool:
     """
     Регистрирует эксклюзивное использование driver для одной задачи.
     Возвращает True, если сессия захвачена успешно.
@@ -35,11 +35,12 @@ def begin_driver_session(task_name: str) -> bool:
             return False
 
         if _driver_session_owner is not None:
-            write_log(
-                f"Браузер уже используется задачей '{_driver_session_owner}'. "
-                f"Дождитесь её завершения.",
-                log_type="info"
-            )
+            if not quiet:
+                write_log(
+                    f"Браузер уже используется задачей '{_driver_session_owner}'. "
+                    f"Дождитесь её завершения.",
+                    log_type="info"
+                )
             return False
 
         _driver_session_owner = task_name

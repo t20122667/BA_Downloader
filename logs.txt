@@ -1,6 +1,402 @@
+Чёрный список [males] – загрузка страницы offset=0...
+Чёрный список [males] – найдено 20 номеров на странице offset=0.
+Чёрный список [males] – загрузка страницы offset=20...
+Чёрный список [males] – найдено 20 номеров на странице offset=20.
+Чёрный список [males] – загрузка страницы offset=40...
+Чёрный список [males] – найдено 20 номеров на странице offset=40.
+Чёрный список [males] – загрузка страницы offset=60...
+Чёрный список [males] – найдено 20 номеров на странице offset=60.
+Чёрный список [males] – загрузка страницы offset=80...
+Чёрный список [males] – найдено 20 номеров на странице offset=80.
+Чёрный список [males] – загрузка страницы offset=100...
+Чёрный список [males] – найдено 20 номеров на странице offset=100.
+Чёрный список [males] – загрузка страницы offset=120...
+Чёрный список [males] – найдено 20 номеров на странице offset=120.
+Чёрный список [males] – загрузка страницы offset=140...
+Чёрный список [males] – найдено 20 номеров на странице offset=140.
+Чёрный список [males] – загрузка страницы offset=160...
+Чёрный список [males] – найдено 20 номеров на странице offset=160.
+Чёрный список [males] – загрузка страницы offset=180...
+Чёрный список [males] – найдено 20 номеров на странице offset=180.
+Чёрный список [males] – загрузка страницы offset=200...
+Чёрный список [males] – найдено 20 номеров на странице offset=200.
+Чёрный список [males] – загрузка страницы offset=220...
+Чёрный список [males] – найдено 20 номеров на странице offset=220.
+Чёрный список [males] – загрузка страницы offset=240...
+Чёрный список [males] – найдено 20 номеров на странице offset=240.
+Чёрный список [males] – загрузка страницы offset=260...
+Чёрный список [males] – найдено 20 номеров на странице offset=260.
+Чёрный список [males] – загрузка страницы offset=280...
+Чёрный список [males] – найдено 20 номеров на странице offset=280.
+Чёрный список [males] – загрузка страницы offset=300...
+Чёрный список [males] – найдено 20 номеров на странице offset=300.
+Чёрный список [males] – загрузка страницы offset=320...
+Чёрный список [males] – найдено 20 номеров на странице offset=320.
+Чёрный список [males] – загрузка страницы offset=340...
+Чёрный список [males] – найдено 20 номеров на странице offset=340.
+Чёрный список [males] – загрузка страницы offset=360...
+Чёрный список [males] – найдено 20 номеров на странице offset=360.
+Чёрный список [males] – загрузка страницы offset=380...
+Чёрный список [males] – найдено 20 номеров на странице offset=380.
+Чёрный список [males] – загрузка страницы offset=400...
+Чёрный список [males] – найдено 20 номеров на странице offset=400.
+Чёрный список [males] – загрузка страницы offset=420...
+Чёрный список [males] – найдено 20 номеров на странице offset=420.
+Чёрный список [males] – загрузка страницы offset=440...
+Чёрный список [males] – найдено 20 номеров на странице offset=440.
+Чёрный список [males] – загрузка страницы offset=460...
+Чёрный список [males] – найдено 20 номеров на странице offset=460.
+Чёрный список [males] – загрузка страницы offset=480...
+Чёрный список [males] – найдено 20 номеров на странице offset=480.
+Чёрный список [males] – загрузка страницы offset=500...
+Чёрный список [males] – найдено 20 номеров на странице offset=500.
+Чёрный список [males] – загрузка страницы offset=520...
+Чёрный список [males] – найдено 20 номеров на странице offset=520.
+Чёрный список [males] – загрузка страницы offset=540...
+Чёрный список [males] – найдено 20 номеров на странице offset=540.
+Чёрный список [males] – загрузка страницы offset=560...
+Чёрный список [males] – найдено 20 номеров на странице offset=560.
+Чёрный список [males] – загрузка страницы offset=580...
+Чёрный список [males] – найдено 20 номеров на странице offset=580.
+Чёрный список [males] – загрузка страницы offset=600...
+Чёрный список [males] – найдено 20 номеров на странице offset=600.
+Чёрный список [males] – загрузка страницы offset=620...
+Чёрный список [males] – найдено 20 номеров на странице offset=620.
+Чёрный список [males] – загрузка страницы offset=640...
+Чёрный список [males] – найдено 20 номеров на странице offset=640.
+Чёрный список [males] – загрузка страницы offset=660...
+Чёрный список [males] – найдено 20 номеров на странице offset=660.
+Чёрный список [males] – загрузка страницы offset=680...
+Чёрный список [males] – найдено 20 номеров на странице offset=680.
+Чёрный список [males] – загрузка страницы offset=700...
+Чёрный список [males] – найдено 20 номеров на странице offset=700.
+Чёрный список [males] – загрузка страницы offset=720...
+Чёрный список [males] – найдено 20 номеров на странице offset=720.
+Чёрный список [males] – загрузка страницы offset=740...
+Чёрный список [males] – найдено 20 номеров на странице offset=740.
+Чёрный список [males] – загрузка страницы offset=760...
+Чёрный список [males] – найдено 20 номеров на странице offset=760.
+Чёрный список [males] – загрузка страницы offset=780...
+Чёрный список [males] – найдено 20 номеров на странице offset=780.
+Чёрный список [males] – загрузка страницы offset=800...
+Чёрный список [males] – найдено 20 номеров на странице offset=800.
+Чёрный список [males] – загрузка страницы offset=820...
+Чёрный список [males] – найдено 20 номеров на странице offset=820.
+Чёрный список [males] – загрузка страницы offset=840...
+Чёрный список [males] – найдено 20 номеров на странице offset=840.
+Чёрный список [males] – загрузка страницы offset=860...
+Чёрный список [males] – найдено 20 номеров на странице offset=860.
+Чёрный список [males] – загрузка страницы offset=880...
+Чёрный список [males] – найдено 20 номеров на странице offset=880.
+Чёрный список [males] – загрузка страницы offset=900...
+Чёрный список [males] – найдено 20 номеров на странице offset=900.
+Чёрный список [males] – загрузка страницы offset=920...
+Чёрный список [males] – найдено 20 номеров на странице offset=920.
+Чёрный список [males] – загрузка страницы offset=940...
+Чёрный список [males] – найдено 20 номеров на странице offset=940.
+Чёрный список [males] – загрузка страницы offset=960...
+Чёрный список [males] – найдено 20 номеров на странице offset=960.
+Чёрный список [males] – загрузка страницы offset=980...
+Чёрный список [males] – найдено 20 номеров на странице offset=980.
+Чёрный список [males] – загрузка страницы offset=1000...
+Чёрный список [males] – найдено 20 номеров на странице offset=1000.
+Чёрный список [males] – загрузка страницы offset=1020...
+Чёрный список [males] – найдено 20 номеров на странице offset=1020.
+Чёрный список [males] – загрузка страницы offset=1040...
+Чёрный список [males] – найдено 20 номеров на странице offset=1040.
+Чёрный список [males] – загрузка страницы offset=1060...
+Чёрный список [males] – найдено 20 номеров на странице offset=1060.
+Чёрный список [males] – загрузка страницы offset=1080...
+Чёрный список [males] – найдено 20 номеров на странице offset=1080.
+Чёрный список [males] – загрузка страницы offset=1100...
+Чёрный список [males] – найдено 20 номеров на странице offset=1100.
+Чёрный список [males] – загрузка страницы offset=1120...
+Чёрный список [males] – найдено 20 номеров на странице offset=1120.
+Чёрный список [males] – загрузка страницы offset=1140...
+Чёрный список [males] – найдено 20 номеров на странице offset=1140.
+Чёрный список [males] – загрузка страницы offset=1160...
+Чёрный список [males] – найдено 20 номеров на странице offset=1160.
+Чёрный список [males] – загрузка страницы offset=1180...
+Чёрный список [males] – найдено 20 номеров на странице offset=1180.
+Чёрный список [males] – загрузка страницы offset=1200...
+Чёрный список [males] – найдено 20 номеров на странице offset=1200.
+Чёрный список [males] – загрузка страницы offset=1220...
+Чёрный список [males] – найдено 20 номеров на странице offset=1220.
+Чёрный список [males] – загрузка страницы offset=1240...
+Чёрный список [males] – найдено 20 номеров на странице offset=1240.
+Чёрный список [males] – загрузка страницы offset=1260...
+Чёрный список [males] – найдено 20 номеров на странице offset=1260.
+Чёрный список [males] – загрузка страницы offset=1280...
+Чёрный список [males] – найдено 20 номеров на странице offset=1280.
+Чёрный список [males] – загрузка страницы offset=1300...
+Чёрный список [males] – найдено 20 номеров на странице offset=1300.
+Чёрный список [males] – загрузка страницы offset=1320...
+Чёрный список [males] – найдено 20 номеров на странице offset=1320.
+Чёрный список [males] – загрузка страницы offset=1340...
+Чёрный список [males] – найдено 20 номеров на странице offset=1340.
+Чёрный список [males] – загрузка страницы offset=1360...
+Чёрный список [males] – найдено 20 номеров на странице offset=1360.
+Чёрный список [males] – загрузка страницы offset=1380...
+Чёрный список [males] – найдено 20 номеров на странице offset=1380.
+Чёрный список [males] – загрузка страницы offset=1400...
+Чёрный список [males] – найдено 20 номеров на странице offset=1400.
+Чёрный список [males] – загрузка страницы offset=1420...
+Чёрный список [males] – найдено 20 номеров на странице offset=1420.
+Чёрный список [males] – загрузка страницы offset=1440...
+Чёрный список [males] – найдено 20 номеров на странице offset=1440.
+Чёрный список [males] – загрузка страницы offset=1460...
+Чёрный список [males] – найдено 20 номеров на странице offset=1460.
+Чёрный список [males] – загрузка страницы offset=1480...
+Чёрный список [males] – найдено 20 номеров на странице offset=1480.
+Чёрный список [males] – загрузка страницы offset=1500...
+Чёрный список [males] – найдено 20 номеров на странице offset=1500.
+Чёрный список [males] – загрузка страницы offset=1520...
+Чёрный список [males] – найдено 20 номеров на странице offset=1520.
+Чёрный список [males] – загрузка страницы offset=1540...
+Чёрный список [males] – найдено 20 номеров на странице offset=1540.
+Чёрный список [males] – загрузка страницы offset=1560...
+Чёрный список [males] – найдено 20 номеров на странице offset=1560.
+Чёрный список [males] – загрузка страницы offset=1580...
+Чёрный список [males] – найдено 20 номеров на странице offset=1580.
+Чёрный список [males] – загрузка страницы offset=1600...
+Чёрный список [males] – найдено 20 номеров на странице offset=1600.
+Чёрный список [males] – загрузка страницы offset=1620...
+Чёрный список [males] – найдено 20 номеров на странице offset=1620.
+Чёрный список [males] – загрузка страницы offset=1640...
+Чёрный список [males] – найдено 20 номеров на странице offset=1640.
+Чёрный список [males] – загрузка страницы offset=1660...
+Чёрный список [males] – найдено 12 номеров на странице offset=1660.
+Чёрный список [males] – загрузка страницы offset=1680...
+Чёрный список [males] – страница offset=1680 не содержит номеров. Завершаем режим 'males'.
+Чёрный список [transgender] – загрузка страницы offset=0...
+Чёрный список [transgender] – найдено 20 номеров на странице offset=0.
+Чёрный список [transgender] – загрузка страницы offset=20...
+Чёрный список [transgender] – найдено 20 номеров на странице offset=20.
+Чёрный список [transgender] – загрузка страницы offset=40...
+Чёрный список [transgender] – найдено 20 номеров на странице offset=40.
+Чёрный список [transgender] – загрузка страницы offset=60...
+Чёрный список [transgender] – страница offset=60 не содержит номеров. Завершаем режим 'transgender'.
+Чёрный список создан успешно. Всего найдено 1732 номеров. Файл: blacklist.txt
 Авторизация завершена. Cookies сохранены.
-Начало последовательной загрузки видео.
-[22-03-2026 15:27:29] Начало обработки файла: 4543-A3.mp4
-4543-A3.mp4 скачано успешно.
-Обработка 4543-A3.mp4 завершена.
-[22-03-2026 15:28:19] Начало обработки файла: 5855-C1.mp4
+Файл очищен: video_links.txt
+Файл очищен: successful_downloads.txt
+Запуск конвейера: сбор ссылок с допустимым опережением до 10 и параллельная загрузка 8 потоками.
+Сбор прямых ссылок, страница: https://beautifulagony.com/public/main.php?page=view&mode=latest&offset=0
+Ссылка проигнорирована (чёрный список – real_number=5856): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33900&person_number=6126&type=C
+Добавлена запись: 5853-A1.mp4 | 295.22 MB | https://bcdn.beautifulagony.com/33884/A5853HD-A1.mp4?expires=1774275995&token=sB5nONKxGtSwGdKFwJLvvq5Hjej7WbcWXie5wybkKvk&token_path=%2F33884%2F
+Собрано ссылок: 1
+[DEBUG] Сравнение размеров: actual=309558269, expected=309558269, diff=0, allowed=928674.807
+5853-A1.mp4 уже скачано.
+Добавлена запись: 4543-A3.mp4 | 354.53 MB | https://bcdn.beautifulagony.com/33898/A4543HD-A3.mp4?expires=1774275997&token=NiIYivuINjX1fEKbg78T3Z75tWDZCCRz0RNk8YTQGJs&token_path=%2F33898%2F
+Собрано ссылок: 2
+Ссылка проигнорирована (чёрный список – real_number=2150): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33891&person_number=2318&type=A
+[DEBUG] Сравнение размеров: actual=371755361, expected=371755361, diff=0, allowed=1115266.083
+4543-A3.mp4 уже скачано.
+Добавлена запись: 5855-C1.mp4 | 338.21 MB | https://bcdn.beautifulagony.com/33889/C5855HD-C1.mp4?expires=1774276001&token=hmuMqjXd0odNEfgZA5c6n4MKJN8CCdJQFhILvFNY3xo&token_path=%2F33889%2F
+Собрано ссылок: 3
+[DEBUG] Сравнение размеров: actual=354637876, expected=354637876, diff=0, allowed=1063913.628
+5855-C1.mp4 уже скачано.
+Добавлена запись: 0626-R1.mp4 | 158.27 MB | https://bcdn.beautifulagony.com/33896/R0626HD-R1.mp4?expires=1774276016&token=v0yMC6BwrE8v5W5zL4psDcd8Ce8fvXxqNU1HdYuJAPI&token_path=%2F33896%2F
+Собрано ссылок: 4
+Добавлена запись: 5793-A2.mp4 | 352.73 MB | https://bcdn.beautifulagony.com/33878/A5793HD-A2.mp4?expires=1774276018&token=iHkVfGYDnBiNeDPxTUkaBo9Jtlce7FdVJcvRKxWHAzk&token_path=%2F33878%2F
+Собрано ссылок: 5
+[DEBUG] Сравнение размеров: actual=165953989, expected=165953989, diff=0, allowed=497861.967
+[DEBUG] Сравнение размеров: actual=165953989, expected=165953989, diff=0, allowed=497861.967
+0626-R1.mp4 скачано успешно.
+Скачано видео: 1
+Добавлена запись: 0498-R1.mp4 | 255.05 MB | https://bcdn.beautifulagony.com/33888/R0498HD-R1.mp4?expires=1774276021&token=9NX-Bv8RDc0f3oTM7EXZESJHhm4JLbJtBVnP3_TvliQ&token_path=%2F33888%2F
+Собрано ссылок: 6
+Добавлена запись: 5339-A4.mp4 | 338.62 MB | https://bcdn.beautifulagony.com/33885/A5339HD-A4.mp4?expires=1774276024&token=fpCNUcj8ShZEIC5AxekmdzHK9xb4uZ7hEIYi8JX5W18&token_path=%2F33885%2F
+Собрано ссылок: 7
+Добавлена запись: 5854-C1.mp4 | 320.87 MB | https://bcdn.beautifulagony.com/33886/C5854HD-C1.mp4?expires=1774276026&token=YbKkbjRYBN85dBazlgC_gqDLWH1cVwOBcz9ESK91vls&token_path=%2F33886%2F
+Собрано ссылок: 8
+Добавлена запись: 5852-A1.mp4 | 299.47 MB | https://bcdn.beautifulagony.com/33880/A5852HD-A1.mp4?expires=1774276029&token=Hh-PI_VKrUlU_rC4ZYmZpi5LEyRiWQVLkJ0oE8qPrwA&token_path=%2F33880%2F
+Собрано ссылок: 9
+[DEBUG] Сравнение размеров: actual=369865407, expected=369865407, diff=0, allowed=1109596.2210000001
+[DEBUG] Сравнение размеров: actual=369865407, expected=369865407, diff=0, allowed=1109596.2210000001
+5793-A2.mp4 скачано успешно.
+Скачано видео: 2
+Добавлена запись: 5758-A2.mp4 | 409.02 MB | https://bcdn.beautifulagony.com/33877/A5758HD-A2.mp4?expires=1774276033&token=fCvrdF7-pMZvwK4B2cqP3M0ycBX90SRZUeYKoRc5Gw8&token_path=%2F33877%2F
+Собрано ссылок: 10
+[DEBUG] Сравнение размеров: actual=355066270, expected=355066270, diff=0, allowed=1065198.81
+[DEBUG] Сравнение размеров: actual=355066270, expected=355066270, diff=0, allowed=1065198.81
+5339-A4.mp4 скачано успешно.
+Скачано видео: 3
+Добавлена запись: 5853-C1.mp4 | 436.19 MB | https://bcdn.beautifulagony.com/33883/C5853HD-C1.mp4?expires=1774276037&token=uPlY0HJARQoeTNdAEzMJzW9ew25J2twmGCrIADuNDLY&token_path=%2F33883%2F
+Собрано ссылок: 11
+Ссылка проигнорирована (чёрный список – real_number=5805): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33863&person_number=6059&type=A
+Добавлена запись: 2163-R1.mp4 | 326.01 MB | https://bcdn.beautifulagony.com/33882/R2163HD-R1.mp4?expires=1774276041&token=8eCztD0XMuS6AaSRxEWLAA800wEAAWthRi4ECvRk4E0&token_path=%2F33882%2F
+Собрано ссылок: 12
+Добавлена запись: 5650-A2.mp4 | 268.46 MB | https://bcdn.beautifulagony.com/33862/A5650HD-A2.mp4?expires=1774276045&token=-5evt4ivqPhfr_0QemjS6OzG3msBeJyjH5Nm24inTyM&token_path=%2F33862%2F
+Собрано ссылок: 13
+[DEBUG] Сравнение размеров: actual=336455896, expected=336455896, diff=0, allowed=1009367.688
+[DEBUG] Сравнение размеров: actual=336455896, expected=336455896, diff=0, allowed=1009367.688
+5854-C1.mp4 скачано успешно.
+Скачано видео: 4
+Добавлена запись: 0596-R1.mp4 | 300.96 MB | https://bcdn.beautifulagony.com/33881/R0596HD-R1.mp4?expires=1774276049&token=41-7Ertoe_UU3HaFhX4CC-RLN_XjBeXLGZQibLcqRBA&token_path=%2F33881%2F
+Собрано ссылок: 14
+Ссылка проигнорирована (чёрный список – real_number=5851): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33874&person_number=6124&type=A
+Добавлена запись: 5850-A1.mp4 | 194.08 MB | https://bcdn.beautifulagony.com/33872/A5850HD-A1.mp4?expires=1774276052&token=oSp0LOnUda9PDhp8W2rtdaQ8BAGvIEMMw0l-rNdCaWg&token_path=%2F33872%2F
+Собрано ссылок: 15
+Добавлена запись: 5778-A2.mp4 | 393.83 MB | https://bcdn.beautifulagony.com/33861/A5778HD-A2.mp4?expires=1774276054&token=tKcnW-VlnlTvkZh8F6t8OGyvCtxez5PNJiJfzyXry7o&token_path=%2F33861%2F
+Собрано ссылок: 16
+Сбор прямых ссылок, страница: https://beautifulagony.com/public/main.php?page=view&mode=latest&offset=20
+[DEBUG] Сравнение размеров: actual=314016223, expected=314016223, diff=0, allowed=942048.669
+[DEBUG] Сравнение размеров: actual=314016223, expected=314016223, diff=0, allowed=942048.669
+5852-A1.mp4 скачано успешно.
+Скачано видео: 5
+[DEBUG] Сравнение размеров: actual=281498281, expected=281498281, diff=0, allowed=844494.843
+Добавлена запись: 5852-C1.mp4 | 330.23 MB | https://bcdn.beautifulagony.com/33879/C5852HD-C1.mp4?expires=1774276064&token=aswOlyxPIT_ff5ofNj8cb_-YcCqHVtA-mDChJnJzcgI&token_path=%2F33879%2F
+Собрано ссылок: 17
+Ссылка проигнорирована (чёрный список – real_number=5684): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33876&person_number=5959&type=A
+[DEBUG] Сравнение размеров: actual=281498281, expected=281498281, diff=0, allowed=844494.843
+5650-A2.mp4 скачано успешно.
+Скачано видео: 6
+[DEBUG] Сравнение размеров: actual=203507859, expected=203507859, diff=0, allowed=610523.577
+[DEBUG] Сравнение размеров: actual=203507859, expected=203507859, diff=0, allowed=610523.577
+5850-A1.mp4: не удалось завершить файл (попытка 1/5), файл занят другим процессом: [WinError 32] The process cannot access the file because it is being used by another process: 'S:/Test\\5850-A1.mp4.part' -> 'S:/Test\\5850-A1.mp4'
+[DEBUG] Сравнение размеров: actual=341848115, expected=341848115, diff=0, allowed=1025544.345
+[DEBUG] Сравнение размеров: actual=341848115, expected=341848115, diff=0, allowed=1025544.345
+Добавлена запись: 0519-R1.mp4 | 322.15 MB | https://bcdn.beautifulagony.com/33868/R0519HD-R1.mp4?expires=1774276068&token=BOzTl3qYrFu6fLI7Ryio1_6xg11MN3ajoQfFlB2qqXE&token_path=%2F33868%2F
+2163-R1.mp4 скачано успешно.
+Собрано ссылок: 18
+Скачано видео: 7
+5850-A1.mp4 скачано успешно.
+Скачано видео: 8
+[DEBUG] Сравнение размеров: actual=267435759, expected=267435759, diff=0, allowed=802307.277
+[DEBUG] Сравнение размеров: actual=267435759, expected=267435759, diff=0, allowed=802307.277
+0498-R1.mp4 скачано успешно.
+Скачано видео: 9
+Добавлена запись: 5702-A2.mp4 | 217.63 MB | https://bcdn.beautifulagony.com/33860/A5702HD-A2.mp4?expires=1774276072&token=sZiyY1kFtZvwV6DhA0JgyiWpwxCNwsjzF7x0BtW-pzY&token_path=%2F33860%2F
+Собрано ссылок: 19
+[DEBUG] Сравнение размеров: actual=457375581, expected=457375581, diff=0, allowed=1372126.743
+[DEBUG] Сравнение размеров: actual=457375581, expected=457375581, diff=0, allowed=1372126.743
+5853-C1.mp4 скачано успешно.
+Скачано видео: 10
+Добавлена запись: 0228-R2.mp4 | 89.21 MB | https://bcdn.beautifulagony.com/33870/R0228HD-R2.mp4?expires=1774276078&token=4iXwr1fySZXnYg1xq4YleOmuv8tDsA4ew02k6Q4KCU4&token_path=%2F33870%2F
+Собрано ссылок: 20
+[DEBUG] Сравнение размеров: actual=428884058, expected=428884058, diff=0, allowed=1286652.174
+[DEBUG] Сравнение размеров: actual=428884058, expected=428884058, diff=0, allowed=1286652.174
+5758-A2.mp4 скачано успешно.
+Скачано видео: 11
+Добавлена запись: 5691-A2.mp4 | 225.43 MB | https://bcdn.beautifulagony.com/33859/A5691HD-A2.mp4?expires=1774276083&token=frE_V2-NRWNeKgoQWN-7AZD_oBrssU8bqbTuwmKdj-0&token_path=%2F33859%2F
+Собрано ссылок: 21
+Ссылка проигнорирована (чёрный список – real_number=5851): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33873&person_number=6124&type=C
+Добавлена запись: 5849-A1.mp4 | 334.88 MB | https://bcdn.beautifulagony.com/33857/A5849HD-A1.mp4?expires=1774276086&token=kYDVjl_Kp8XHKpvZrwq1r6ROBUexuTlMsZvCwb4MMJ8&token_path=%2F33857%2F
+Собрано ссылок: 22
+[DEBUG] Сравнение размеров: actual=315575367, expected=315575367, diff=0, allowed=946726.101
+[DEBUG] Сравнение размеров: actual=315575367, expected=315575367, diff=0, allowed=946726.101
+0596-R1.mp4 скачано успешно.
+Скачано видео: 12
+[DEBUG] Сравнение размеров: actual=93546974, expected=93546974, diff=0, allowed=280640.922
+[DEBUG] Сравнение размеров: actual=93546974, expected=93546974, diff=0, allowed=280640.922
+0228-R2.mp4 скачано успешно.
+Скачано видео: 13
+Добавлена запись: 0332-F1.mp4 | 715.57 MB | https://bcdn.beautifulagony.com/33875/F0332HD-F1.mp4?expires=1774276093&token=CNmGOzN8gXmQk2suTEkf0X4NpoFWD73tyfMhjI2eDaM&token_path=%2F33875%2F
+Собрано ссылок: 23
+Добавлена запись: 5850-C1.mp4 | 246.14 MB | https://bcdn.beautifulagony.com/33871/C5850HD-C1.mp4?expires=1774276097&token=vqfsybZiXIa2NJQr_huIDHGo4O8AC_LEKulQr79C8uw&token_path=%2F33871%2F
+Собрано ссылок: 24
+Ссылка проигнорирована (чёрный список – real_number=5801): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33866&person_number=6072&type=A
+[DEBUG] Сравнение размеров: actual=337796916, expected=337796916, diff=0, allowed=1013390.748
+[DEBUG] Сравнение размеров: actual=337796916, expected=337796916, diff=0, allowed=1013390.748
+0519-R1.mp4 скачано успешно.
+[DEBUG] Сравнение размеров: actual=412964008, expected=412964008, diff=0, allowed=1238892.024
+Скачано видео: 14
+[DEBUG] Сравнение размеров: actual=412964008, expected=412964008, diff=0, allowed=1238892.024
+5778-A2.mp4 скачано успешно.
+Скачано видео: 15
+[DEBUG] Сравнение размеров: actual=236376711, expected=236376711, diff=0, allowed=709130.133
+[DEBUG] Сравнение размеров: actual=236376711, expected=236376711, diff=0, allowed=709130.133
+5691-A2.mp4 скачано успешно.
+Скачано видео: 16
+[DEBUG] Сравнение размеров: actual=228205616, expected=228205616, diff=0, allowed=684616.848
+[DEBUG] Сравнение размеров: actual=228205616, expected=228205616, diff=0, allowed=684616.848
+5702-A2.mp4 скачано успешно.
+Скачано видео: 17
+Добавлена запись: 0741-R1.mp4 | 174.46 MB | https://bcdn.beautifulagony.com/33869/R0741HD-R1.mp4?expires=1774276100&token=e33BKA1AhQIJSvY6ylKdJqLmSW3-owUPUVecE8UqFM4&token_path=%2F33869%2F
+Собрано ссылок: 25
+[DEBUG] Сравнение размеров: actual=346274936, expected=346274936, diff=0, allowed=1038824.8080000001
+[DEBUG] Сравнение размеров: actual=346274936, expected=346274936, diff=0, allowed=1038824.8080000001
+5852-C1.mp4 скачано успешно.
+Скачано видео: 18
+Добавлена запись: 5786-A2.mp4 | 271.35 MB | https://bcdn.beautifulagony.com/33858/A5786HD-A2.mp4?expires=1774276108&token=Mv_tFS7iyPs6rf948ProkhZ2J3EBf5PUvYSeK0Zuefw&token_path=%2F33858%2F
+Собрано ссылок: 26
+Добавлена запись: 0514-R1.mp4 | 328.22 MB | https://bcdn.beautifulagony.com/33867/R0514HD-R1.mp4?expires=1774276112&token=L9gUccV6dcHmm81phywVWJpg4dVn86CjCfcfq-YGEvk&token_path=%2F33867%2F
+Собрано ссылок: 27
+Ссылка проигнорирована (чёрный список – real_number=5848): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33853&person_number=6113&type=A
+[DEBUG] Сравнение размеров: actual=182931225, expected=182931225, diff=0, allowed=548793.675
+[DEBUG] Сравнение размеров: actual=182931225, expected=182931225, diff=0, allowed=548793.675
+0741-R1.mp4 скачано успешно.
+Скачано видео: 19
+Добавлена запись: 5847-A1.mp4 | 352.42 MB | https://bcdn.beautifulagony.com/33850/A5847HD-A1.mp4?expires=1774276115&token=Zu0u3uUTfEiYI1g31aZMmeoi9o9UH08chbEeZNn4hsQ&token_path=%2F33850%2F
+Собрано ссылок: 28
+[DEBUG] Сравнение размеров: actual=351149228, expected=351149228, diff=0, allowed=1053447.6840000001
+Добавлена запись: 5538-A3.mp4 | 319.42 MB | https://bcdn.beautifulagony.com/33865/A5538HD-A3.mp4?expires=1774276118&token=PyIU9HZVIECPvCdrVUJwMnz2RimH0sMgLviE9Q8mmZw&token_path=%2F33865%2F
+Собрано ссылок: 29
+[DEBUG] Сравнение размеров: actual=351149228, expected=351149228, diff=0, allowed=1053447.6840000001
+5849-A1.mp4 скачано успешно.
+Скачано видео: 20
+Добавлена запись: 5849-C1.mp4 | 551.61 MB | https://bcdn.beautifulagony.com/33856/C5849HD-C1.mp4?expires=1774276124&token=HzP5xM-qD2KKuiNBskikJ-JYFTcoWzZaUXllcWk99fg&token_path=%2F33856%2F
+Собрано ссылок: 30
+Ссылка проигнорирована (чёрный список – real_number=5771): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33855&person_number=6048&type=A
+[DEBUG] Сравнение размеров: actual=258096543, expected=258096543, diff=0, allowed=774289.6290000001
+[DEBUG] Сравнение размеров: actual=258096543, expected=258096543, diff=0, allowed=774289.6290000001
+5850-C1.mp4 скачано успешно.
+Скачано видео: 21
+Добавлена запись: 0293-R1.mp4 | 259.37 MB | https://bcdn.beautifulagony.com/33864/R0293HD-R1.mp4?expires=1774276128&token=nW3_T08zzJx3krvsUGxNNLfWgadXAaJJkr5gbXCHYS4&token_path=%2F33864%2F
+Собрано ссылок: 31
+Сбор прямых ссылок, страница: https://beautifulagony.com/public/main.php?page=view&mode=latest&offset=40
+[DEBUG] Сравнение размеров: actual=344168278, expected=344168278, diff=0, allowed=1032504.834
+[DEBUG] Сравнение размеров: actual=344168278, expected=344168278, diff=0, allowed=1032504.834
+0514-R1.mp4 скачано успешно.
+Скачано видео: 22
+Добавлена запись: 5741-A2.mp4 | 312.14 MB | https://bcdn.beautifulagony.com/33854/A5741HD-A2.mp4?expires=1774276138&token=lGgifqwvciHVWg7JHzzPT7-aIzNRf3f8DeodZViWRE4&token_path=%2F33854%2F
+Собрано ссылок: 32
+Добавлена запись: 1529-R1.mp4 | 178.50 MB | https://bcdn.beautifulagony.com/33851/R1529HD-R1.mp4?expires=1774276140&token=BguDsVptI63UWgUTkyM7IkR36F53cOlaEJycqJkSP54&token_path=%2F33851%2F
+Собрано ссылок: 33
+Ссылка проигнорирована (чёрный список – real_number=5846): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33845&person_number=6096&type=A
+Ссылка проигнорирована (чёрный список – real_number=5848): https://beautifulagony.com/public/main.php?page=player&out=bkg&media_id=33852&person_number=6113&type=C
+Добавлена запись: 5845-A1.mp4 | 371.20 MB | https://bcdn.beautifulagony.com/33839/A5845HD-A1.mp4?expires=1774276143&token=GVV34AMFuF8-iQcKbiRtz1Zr4mH7sHcghFyE8xV6Yqw&token_path=%2F33839%2F
+Собрано ссылок: 34
+[DEBUG] Сравнение размеров: actual=284530701, expected=284530701, diff=0, allowed=853592.103
+[DEBUG] Сравнение размеров: actual=284530701, expected=284530701, diff=0, allowed=853592.103
+5786-A2.mp4 скачано успешно.
+Скачано видео: 23
+Добавлена запись: 0598-A2.mp4 | 261.89 MB | https://bcdn.beautifulagony.com/33848/A0598HD-A2.mp4?expires=1774276146&token=Tf-PrNFCoYordVbluhyv9_2ytJv80f6tLu7gFRThCeo&token_path=%2F33848%2F
+Собрано ссылок: 35
+[DEBUG] Сравнение размеров: actual=369538512, expected=369538512, diff=0, allowed=1108615.536
+[DEBUG] Сравнение размеров: actual=369538512, expected=369538512, diff=0, allowed=1108615.536
+5847-A1.mp4 скачано успешно.
+Скачано видео: 24
+[DEBUG] Сравнение размеров: actual=271967548, expected=271967548, diff=0, allowed=815902.644
+[DEBUG] Сравнение размеров: actual=271967548, expected=271967548, diff=0, allowed=815902.644
+0293-R1.mp4 скачано успешно.
+Скачано видео: 25
+[DEBUG] Сравнение размеров: actual=750328939, expected=750328939, diff=0, allowed=2250986.8170000003
+[DEBUG] Сравнение размеров: actual=750328939, expected=750328939, diff=0, allowed=2250986.8170000003
+0332-F1.mp4 скачано успешно.
+Скачано видео: 26
+[DEBUG] Сравнение размеров: actual=578401230, expected=578401230, diff=0, allowed=1735203.69
+[DEBUG] Сравнение размеров: actual=578401230, expected=578401230, diff=0, allowed=1735203.69
+5849-C1.mp4 скачано успешно.
+Скачано видео: 27
+[DEBUG] Сравнение размеров: actual=334936947, expected=334936947, diff=0, allowed=1004810.841
+[DEBUG] Сравнение размеров: actual=334936947, expected=334936947, diff=0, allowed=1004810.841
+5538-A3.mp4 скачано успешно.
+Скачано видео: 28
+[DEBUG] Сравнение размеров: actual=187166855, expected=187166855, diff=0, allowed=561500.5650000001
+[DEBUG] Сравнение размеров: actual=187166855, expected=187166855, diff=0, allowed=561500.5650000001
+1529-R1.mp4 скачано успешно.
+Скачано видео: 29
+[DEBUG] Сравнение размеров: actual=327302363, expected=327302363, diff=0, allowed=981907.089
+[DEBUG] Сравнение размеров: actual=327302363, expected=327302363, diff=0, allowed=981907.089
+5741-A2.mp4 скачано успешно.
+Скачано видео: 30
+[DEBUG] Сравнение размеров: actual=274612955, expected=274612955, diff=0, allowed=823838.865
+[DEBUG] Сравнение размеров: actual=274612955, expected=274612955, diff=0, allowed=823838.865
+0598-A2.mp4 скачано успешно.
+Скачано видео: 31
+[DEBUG] Сравнение размеров: actual=389235480, expected=389235480, diff=0, allowed=1167706.44
+[DEBUG] Сравнение размеров: actual=389235480, expected=389235480, diff=0, allowed=1167706.44
+5845-A1.mp4 скачано успешно.
+Скачано видео: 32

@@ -1,5 +1,6 @@
 import os
 import threading
+from pathlib import Path
 import tkinter as tk
 import tkinter.messagebox as messagebox
 
@@ -9,10 +10,11 @@ from bs4 import BeautifulSoup
 
 from browser import authorize, check_authorization
 from downloader import (
-    collect_video_links,
     download_videos_sequential,
     request_stop_after_current,
     is_collecting_links,
+    ProgressPanelUI,
+    get_worker_count,
 )
 from utils import (
     open_log_file,
@@ -30,15 +32,12 @@ from utils import (
     write_log,
 )
 
-# Глобальное событие для управления загрузкой видео
 pause_event = threading.Event()
 pause_event.set()
 
-# Отдельное событие для управления поиском ссылок
 search_pause_event = threading.Event()
 search_pause_event.set()
 
-# Глобальное событие для управления процессом создания чёрного списка
 blacklist_pause_event = threading.Event()
 blacklist_pause_event.set()
 
@@ -52,6 +51,37 @@ def open_download_folder(folder_path: str):
         messagebox.showerror("Ошибка", f"Не удалось открыть папку: {e}")
 
 
+def open_text_file(file_path: str, title: str = "Ошибка"):
+    try:
+        if os.path.exists(file_path):
+            os.startfile(file_path)
+        else:
+            messagebox.showerror(title, f"Файл не найден:\n{file_path}")
+    except Exception as e:
+        messagebox.showerror(title, f"Не удалось открыть файл:\n{file_path}\n\n{e}")
+
+
+
+
+def clear_text_file(file_path: str, title: str):
+    try:
+        display_name = Path(file_path).name
+        confirmed = messagebox.askyesno(
+            "Подтверждение",
+            f"Очистить файл:\n{display_name}?"
+        )
+        if not confirmed:
+            return
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("")
+
+        write_log(f"Файл очищен: {display_name}", log_type="info")
+        safe_showinfo(title, f"Файл очищен:\n{display_name}")
+    except Exception as e:
+        write_log(f"Не удалось очистить файл {file_path}: {e}", log_type="error")
+        safe_showerror(title, f"Не удалось очистить файл:\n{file_path}\n\n{e}")
+
 def save_manual_download_folder(var: tk.StringVar):
     folder = var.get().strip()
     if folder:
@@ -60,37 +90,107 @@ def save_manual_download_folder(var: tk.StringVar):
         save_config(config)
 
 
+def _maximize_root(root):
+    try:
+        root.state("zoomed")
+    except Exception:
+        try:
+            root.attributes("-zoomed", True)
+        except Exception:
+            screen_w = root.winfo_screenwidth()
+            screen_h = root.winfo_screenheight()
+            root.geometry(f"{screen_w}x{screen_h}+0+0")
+
+
 def create_gui():
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
 
     root = ctk.CTk()
     root.title("Beautiful Agony Video Downloader")
-    root.geometry("800x1100")
+    root.after(100, lambda: _maximize_root(root))
 
     set_gui_root(root)
 
-    main_frame = ctk.CTkFrame(master=root)
-    main_frame.pack(padx=20, pady=20, fill="both", expand=True)
-
     collecting_now = False
-    downloading_now = False
 
-    #########################################
-    # 1. Блок авторизации
-    auth_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    auth_frame.pack(pady=10, fill="x")
+    lead_limit_var = tk.IntVar(value=30)
+    lead_status_var = tk.StringVar(value="Опережение сбора: 0 / 30")
 
-    timer_label = ctk.CTkLabel(master=auth_frame, text="Нажмите 'Пройти авторизацию', чтобы начать.")
+    # =========================
+    # Главная раскладка окна
+    # =========================
+    root.grid_rowconfigure(0, weight=1)
+    root.grid_columnconfigure(0, weight=1)
+
+    panel_gap = 8
+
+    top_frame = ctk.CTkFrame(master=root, corner_radius=0, fg_color="transparent")
+    top_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+    top_frame.grid_rowconfigure(0, weight=1)
+    top_frame.grid_columnconfigure(0, weight=1, uniform="main_columns")
+    top_frame.grid_columnconfigure(1, weight=1, uniform="main_columns")
+
+    left_panel = ctk.CTkFrame(master=top_frame, fg_color="transparent", border_width=0, corner_radius=0)
+    left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, panel_gap // 2), pady=0)
+    left_panel.grid_rowconfigure(0, weight=0)
+    left_panel.grid_rowconfigure(1, weight=1, minsize=220)
+    left_panel.grid_columnconfigure(0, weight=1)
+
+    right_panel = ctk.CTkFrame(master=top_frame, fg_color="transparent", border_width=0, corner_radius=0)
+    right_panel.grid(row=0, column=1, sticky="nsew", padx=(panel_gap // 2, 0), pady=0)
+    right_panel.grid_rowconfigure(1, weight=1)
+    right_panel.grid_columnconfigure(0, weight=1)
+
+    controls_card = ctk.CTkFrame(master=left_panel, border_width=1, corner_radius=12)
+    controls_card.grid(row=0, column=0, sticky="nsew", padx=0, pady=(0, panel_gap // 2))
+    controls_card.grid_rowconfigure(1, weight=1)
+    controls_card.grid_columnconfigure(0, weight=1)
+
+    controls_title = ctk.CTkLabel(
+        master=controls_card,
+        text="Панель управления",
+        anchor="w",
+        font=ctk.CTkFont(size=18, weight="bold")
+    )
+    controls_title.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
+
+    controls_panel = ctk.CTkFrame(master=controls_card, fg_color="transparent")
+    controls_panel.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+    controls_panel.grid_columnconfigure(0, weight=1)
+
+    progress_card = ctk.CTkFrame(master=left_panel, border_width=1, corner_radius=12)
+    progress_card.grid(row=1, column=0, sticky="nsew", padx=0, pady=(panel_gap // 2, 0))
+    progress_card.grid_rowconfigure(1, weight=1)
+    progress_card.grid_columnconfigure(0, weight=1)
+
+    progress_host = ctk.CTkFrame(master=progress_card, fg_color="transparent")
+    progress_host.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+    progress_host.grid_rowconfigure(0, weight=1)
+    progress_host.grid_columnconfigure(0, weight=1)
+
+    worker_count = get_worker_count()
+    progress_panel = ProgressPanelUI(progress_host, worker_count)
+
+    # =========================
+    # 1. Авторизация
+    # =========================
+    auth_frame = ctk.CTkFrame(master=controls_panel, fg_color="transparent")
+    auth_frame.pack(padx=12, pady=(12, 8), fill="x")
+
+    timer_label = ctk.CTkLabel(master=auth_frame, text="Авторизация")
     timer_label.pack(side="left", padx=5, pady=5)
 
-    #########################################
-    # 2. Блок настроек
-    settings_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    settings_frame.pack(pady=10, fill="x")
+    # =========================
+    # 2. Настройки
+    # =========================
+    settings_frame = ctk.CTkFrame(master=controls_panel, fg_color="transparent")
+    settings_frame.pack(padx=12, pady=8, fill="x")
 
     folder_frame = ctk.CTkFrame(master=settings_frame, fg_color="transparent")
     folder_frame.pack(pady=5, fill="x")
+    folder_frame.grid_columnconfigure(1, weight=1)
+
     folder_label = ctk.CTkLabel(master=folder_frame, text="Выберите папку загрузки:")
     folder_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
@@ -98,8 +198,8 @@ def create_gui():
     default_folder = config.get("download_folder", DOWNLOAD_FOLDER)
     download_folder_var = tk.StringVar(value=default_folder)
 
-    folder_entry = ctk.CTkEntry(master=folder_frame, textvariable=download_folder_var, width=300)
-    folder_entry.grid(row=0, column=1, padx=5, pady=5)
+    folder_entry = ctk.CTkEntry(master=folder_frame, textvariable=download_folder_var)
+    folder_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
     folder_entry.bind("<FocusOut>", lambda event: save_manual_download_folder(download_folder_var))
 
     select_folder_button = ctk.CTkButton(
@@ -111,60 +211,67 @@ def create_gui():
 
     url_frame = ctk.CTkFrame(master=settings_frame, fg_color="transparent")
     url_frame.pack(pady=5, fill="x")
+    url_frame.grid_columnconfigure(1, weight=1)
+
     url_label = ctk.CTkLabel(master=url_frame, text="Введите начальный URL:")
     url_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
     default_url = "https://beautifulagony.com/public/main.php?page=view&mode=latest&offset=0"
     url_var = tk.StringVar(value=default_url)
-    url_entry = ctk.CTkEntry(master=url_frame, textvariable=url_var, width=400)
-    url_entry.grid(row=0, column=1, padx=5, pady=5)
+    url_entry = ctk.CTkEntry(master=url_frame, textvariable=url_var)
+    url_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
-    #########################################
-    # 3. Блок сбора ссылок
-    collection_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    collection_frame.pack(pady=10, fill="x")
+    # =========================
+    # 3. Сбор ссылок
+    # =========================
+    collection_frame = ctk.CTkFrame(master=controls_panel, fg_color="transparent")
+    collection_frame.pack(padx=12, pady=8, fill="x")
+    collection_frame.grid_columnconfigure(1, weight=1)
 
     stop_empty_pages_var = tk.BooleanVar(value=False)
 
-    #########################################
-    # 4. Блок последовательной загрузки
-    download_control_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    download_control_frame.pack(pady=10, fill="x")
+    lead_limit_label = ctk.CTkLabel(master=collection_frame, text="Макс. опережение сбора:")
+    lead_limit_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+    lead_limit_spinbox = ctk.CTkEntry(master=collection_frame, textvariable=lead_limit_var, width=90)
+    lead_limit_spinbox.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+    lead_status_label = ctk.CTkLabel(master=collection_frame, textvariable=lead_status_var, anchor="w")
+    lead_status_label.grid(row=1, column=0, columnspan=2, padx=5, pady=(0, 5), sticky="w")
+
+    # =========================
+    # 4. Загрузка
+    # =========================
+    download_control_frame = ctk.CTkFrame(master=controls_panel, fg_color="transparent")
+    download_control_frame.pack(padx=12, pady=8, fill="x")
 
     stop_after_skips_var = tk.BooleanVar(value=False)
 
-    direction_var = tk.StringVar(value="сначала")
+    def _refresh_lead_status_label(*_args):
+        try:
+            limit = max(1, int(lead_limit_var.get() or 1))
+        except Exception:
+            limit = 1
+        lead_status_var.set(f"Опережение сбора: 0 / {limit}" if not collecting_now else lead_status_var.get().rsplit('/', 1)[0] + f"/ {limit}")
 
-    #########################################
-    # Общие helper-функции UI
+    lead_limit_var.trace_add("write", _refresh_lead_status_label)
+    _refresh_lead_status_label()
+
     def show_post_auth_controls():
         collect_button.grid()
         stop_empty_pages_checkbox.grid()
-        download_seq_button.grid()
-        stop_after_skips_checkbox.grid()
-        direction_label.grid()
-        first_radio.grid()
-        last_radio.grid()
 
     def set_idle_collection_ui():
         collect_button.grid()
         search_buttons_frame.grid_remove()
+        stop_download_button.grid_remove()
 
     def set_running_collection_ui():
         collect_button.grid_remove()
         search_buttons_frame.grid()
-
-    def set_idle_download_ui():
-        download_seq_button.grid()
-        download_buttons_frame.grid_remove()
-        stop_download_button.grid_remove()
-
-    def set_running_download_ui():
-        download_seq_button.grid_remove()
-        download_buttons_frame.grid()
         stop_download_button.grid()
 
-    def set_base_controls_enabled(enabled: bool):
+    def set_pipeline_controls_enabled(enabled: bool):
         state = "normal" if enabled else "disabled"
 
         auth_button.configure(state=state)
@@ -174,34 +281,22 @@ def create_gui():
         url_entry.configure(state=state)
         stop_empty_pages_checkbox.configure(state=state)
         stop_after_skips_checkbox.configure(state=state)
-        first_radio.configure(state=state)
-        last_radio.configure(state=state)
         create_blacklist_button.configure(state=state)
-        open_links_button.configure(state=state)
-        open_downloads_button.configure(state=state)
-        open_blacklist_button.configure(state=state)
+        clear_links_button.configure(state=state)
+        clear_successful_button.configure(state=state)
 
-    def finish_collecting_ui():
+    def finish_pipeline_ui():
         nonlocal collecting_now
         collecting_now = False
-        set_base_controls_enabled(True)
+        set_pipeline_controls_enabled(True)
         set_idle_collection_ui()
-
-    def finish_downloading_ui():
-        nonlocal downloading_now
-        downloading_now = False
-        set_base_controls_enabled(True)
-        set_idle_download_ui()
+        _refresh_lead_status_label()
 
     def start_collecting():
-        nonlocal collecting_now, downloading_now
+        nonlocal collecting_now
 
         if collecting_now:
-            safe_showinfo("Информация", "Сбор ссылок уже запущен.")
-            return
-
-        if downloading_now:
-            safe_showinfo("Информация", "Сейчас идёт загрузка видео. Дождитесь завершения.")
+            safe_showinfo("Информация", "Сбор/загрузка уже запущены.")
             return
 
         if is_collecting_links:
@@ -209,60 +304,38 @@ def create_gui():
             return
 
         collecting_now = True
-        set_base_controls_enabled(False)
+        set_pipeline_controls_enabled(False)
         set_running_collection_ui()
 
         def worker():
             try:
-                collect_video_links(
-                    url_var.get(),
-                    search_pause_event,
-                    stop_empty_pages_var.get()
-                )
-            finally:
-                run_on_ui_thread(finish_collecting_ui)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def start_downloading():
-        nonlocal collecting_now, downloading_now
-
-        if downloading_now:
-            safe_showinfo("Информация", "Загрузка уже запущена.")
-            return
-
-        if collecting_now:
-            safe_showinfo("Информация", "Сейчас идёт сбор ссылок. Дождитесь завершения.")
-            return
-
-        downloading_now = True
-        set_base_controls_enabled(False)
-        set_running_download_ui()
-
-        def worker():
-            try:
                 download_videos_sequential(
-                    root,
-                    download_folder_var.get(),
-                    pause_event,
-                    stop_after_skips_var.get(),
-                    direction_var.get()
+                    root=root,
+                    download_folder=download_folder_var.get(),
+                    pause_event=pause_event,
+                    stop_after_skip=stop_after_skips_var.get(),
+                    start_url=url_var.get(),
+                    search_pause_event=search_pause_event,
+                    stop_on_empty_pages=stop_empty_pages_var.get(),
+                    prefetch_limit=lambda: max(1, int(lead_limit_var.get() or 1)),
+                    progress_panel=progress_panel,
+                    lead_status_callback=lambda current, limit: run_on_ui_thread(lead_status_var.set, f"Опережение сбора: {current} / {limit}"),
                 )
             finally:
-                run_on_ui_thread(finish_downloading_ui)
+                run_on_ui_thread(finish_pipeline_ui)
 
         threading.Thread(target=worker, daemon=True).start()
 
     collect_button = ctk.CTkButton(
         master=collection_frame,
-        text="Собрать ссылки на видео",
+        text="Собрать ссылки и скачать видео",
         command=start_collecting
     )
-    collect_button.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    collect_button.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
     collect_button.grid_remove()
 
     search_buttons_frame = ctk.CTkFrame(master=collection_frame, fg_color="transparent")
-    search_buttons_frame.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    search_buttons_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="w")
     search_buttons_frame.grid_remove()
 
     resume_search_button = ctk.CTkButton(
@@ -284,41 +357,15 @@ def create_gui():
         text="Остановить поиск, если 3 страницы подряд без новых ссылок",
         variable=stop_empty_pages_var
     )
-    stop_empty_pages_checkbox.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+    stop_empty_pages_checkbox.grid(row=3, column=0, columnspan=2, padx=5, pady=5, sticky="w")
     stop_empty_pages_checkbox.grid_remove()
-
-    download_seq_button = ctk.CTkButton(
-        master=download_control_frame,
-        text="Скачать видео по ссылкам",
-        command=start_downloading
-    )
-    download_seq_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
-    download_seq_button.grid_remove()
-
-    download_buttons_frame = ctk.CTkFrame(master=download_control_frame, fg_color="transparent")
-    download_buttons_frame.grid(row=1, column=0, padx=5, pady=5, sticky="w")
-    download_buttons_frame.grid_remove()
-
-    resume_button = ctk.CTkButton(
-        master=download_buttons_frame,
-        text="Возобновить загрузку",
-        command=pause_event.set
-    )
-    resume_button.pack(side="left", padx=(0, 10))
-
-    pause_button = ctk.CTkButton(
-        master=download_buttons_frame,
-        text="Пауза загрузки",
-        command=pause_event.clear
-    )
-    pause_button.pack(side="left")
 
     stop_download_button = ctk.CTkButton(
         master=download_control_frame,
-        text="Остановить загрузку после текущего видео",
+        text="Остановить после текущих активных видео",
         command=request_stop_after_current
     )
-    stop_download_button.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+    stop_download_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
     stop_download_button.grid_remove()
 
     stop_after_skips_checkbox = ctk.CTkCheckBox(
@@ -326,54 +373,63 @@ def create_gui():
         text="Остановить загрузку после 10 подряд пропущенных видео",
         variable=stop_after_skips_var
     )
-    stop_after_skips_checkbox.grid(row=2, column=0, padx=5, pady=5, columnspan=2, sticky="w")
-    stop_after_skips_checkbox.grid_remove()
+    stop_after_skips_checkbox.grid(row=1, column=0, padx=5, pady=5, columnspan=2, sticky="w")
 
-    direction_label = ctk.CTkLabel(master=download_control_frame, text="Направление обхода ссылок:")
-    direction_label.grid(row=3, column=0, padx=5, pady=(5, 0), sticky="w")
-    direction_label.grid_remove()
-
-    first_radio = ctk.CTkRadioButton(
-        master=download_control_frame,
-        text="Сначала",
-        variable=direction_var,
-        value="сначала"
-    )
-    first_radio.grid(row=3, column=1, padx=5, pady=(5, 0), sticky="w")
-    first_radio.grid_remove()
-
-    last_radio = ctk.CTkRadioButton(
-        master=download_control_frame,
-        text="С конца",
-        variable=direction_var,
-        value="с конца"
-    )
-    last_radio.grid(row=3, column=2, padx=5, pady=(5, 0), sticky="w")
-    last_radio.grid_remove()
-
-    #########################################
-    # 5. Файлы и папки
-    files_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    files_frame.pack(pady=10, fill="x")
+    # =========================
+    # 5. Файлы
+    # =========================
+    files_frame = ctk.CTkFrame(master=controls_panel, fg_color="transparent")
+    files_frame.pack(padx=12, pady=8, fill="x")
+    files_frame.grid_columnconfigure(0, weight=1)
+    files_frame.grid_columnconfigure(1, weight=1)
 
     open_links_button = ctk.CTkButton(
         master=files_frame,
         text="Открыть файл со ссылками",
-        command=lambda: os.startfile("video_links.txt")
+        command=lambda: open_text_file("video_links.txt", "Файл ссылок")
     )
-    open_links_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+    open_links_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+
+    clear_links_button = ctk.CTkButton(
+        master=files_frame,
+        text="Очистить файл со ссылками",
+        command=lambda: clear_text_file("video_links.txt", "Файл ссылок")
+    )
+    clear_links_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
+    open_successful_button = ctk.CTkButton(
+        master=files_frame,
+        text="Открыть успешные загрузки",
+        command=lambda: open_text_file("successful_downloads.txt", "Успешные загрузки")
+    )
+    open_successful_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+
+    clear_successful_button = ctk.CTkButton(
+        master=files_frame,
+        text="Очистить успешные загрузки",
+        command=lambda: clear_text_file("successful_downloads.txt", "Успешные загрузки")
+    )
+    clear_successful_button.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
 
     open_downloads_button = ctk.CTkButton(
         master=files_frame,
         text="Открыть папку загрузок",
         command=lambda: open_download_folder(download_folder_var.get())
     )
-    open_downloads_button.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+    open_downloads_button.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
 
-    #########################################
-    # 6. Черный список
-    blacklist_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    blacklist_frame.pack(pady=10, fill="x")
+    open_config_button = ctk.CTkButton(
+        master=files_frame,
+        text="Открыть config.json",
+        command=lambda: open_text_file("config.json", "Конфигурация")
+    )
+    open_config_button.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+
+    # =========================
+    # 6. Чёрный список
+    # =========================
+    blacklist_frame = ctk.CTkFrame(master=controls_panel, fg_color="transparent")
+    blacklist_frame.pack(padx=12, pady=8, fill="x")
 
     def create_blacklist_process():
         total_blacklist = set()
@@ -439,7 +495,6 @@ def create_gui():
             safe_showerror("Ошибка", f"Не удалось записать blacklist.txt: {e}")
 
     def start_blacklist_creation():
-        nonlocal create_blacklist_button, stop_blacklist_button, resume_blacklist_button
         global blacklist_thread
 
         create_blacklist_button.grid_remove()
@@ -479,30 +534,49 @@ def create_gui():
     )
     open_blacklist_button.grid(row=0, column=2, padx=5, pady=5)
 
-    #########################################
-    # 7. Логи
-    log_frame = ctk.CTkFrame(master=main_frame, fg_color="transparent")
-    log_frame.pack(pady=10, fill="both", expand=True)
+    progress_title = ctk.CTkLabel(
+        master=progress_card,
+        text=f"Окно потоков / активные загрузки ({worker_count})",
+        anchor="w",
+        font=ctk.CTkFont(size=18, weight="bold")
+    )
+    progress_title.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
+
+    # =========================
+    # 7. Окно логов / активности
+    # =========================
+    log_title = ctk.CTkLabel(
+        master=right_panel,
+        text="Окно активности / логов",
+        anchor="w",
+        font=ctk.CTkFont(size=18, weight="bold")
+    )
+    log_title.grid(row=0, column=0, sticky="ew", padx=12, pady=(0, 6))
+
+    log_frame = ctk.CTkFrame(master=right_panel, border_width=1, corner_radius=12)
+    log_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+    log_frame.grid_rowconfigure(0, weight=1)
+    log_frame.grid_columnconfigure(0, weight=1)
 
     try:
-        log_textbox = ctk.CTkTextbox(master=log_frame, wrap="word", width=600, height=200)
+        log_textbox = ctk.CTkTextbox(master=log_frame, wrap="word")
     except AttributeError:
-        log_textbox = tk.Text(master=log_frame, wrap="word", width=60, height=15)
+        log_textbox = tk.Text(master=log_frame, wrap="word")
 
-    log_textbox.pack(pady=5, padx=5, fill="both", expand=True)
+    log_textbox.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
 
     log_buttons_frame = ctk.CTkFrame(master=log_frame, fg_color="transparent")
-    log_buttons_frame.pack(pady=5, fill="x")
+    log_buttons_frame.grid(row=1, column=0, pady=(0, 8), padx=8, sticky="ew")
 
     log_file_button = ctk.CTkButton(master=log_buttons_frame, text="Открыть лог файл", command=open_log_file)
-    log_file_button.grid(row=0, column=0, padx=5, pady=5)
+    log_file_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
     failed_file_button = ctk.CTkButton(
         master=log_buttons_frame,
         text="Открыть файл ошибок",
         command=open_failed_links_file
     )
-    failed_file_button.grid(row=0, column=1, padx=5, pady=5)
+    failed_file_button.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
     show_only_pages_and_errors = tk.BooleanVar(value=False)
     filter_checkbox = ctk.CTkCheckBox(
@@ -510,7 +584,11 @@ def create_gui():
         text="Показывать только страницы и ошибки",
         variable=show_only_pages_and_errors
     )
-    filter_checkbox.grid(row=0, column=2, padx=5, pady=5)
+    filter_checkbox.grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+    # Статическая раскладка без принудительного пересчёта высоты:
+    # верхняя часть слева занимает высоту по содержимому,
+    # нижняя часть автоматически получает всё оставшееся место.
 
     set_log_widgets(log_textbox, show_only_pages_and_errors)
 

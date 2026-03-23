@@ -21,7 +21,4 @@ with open(output_file, "w", encoding="utf-8") as out_f:
         else:
             print(f"⚠️ Файл {file} не найден!")
 
-# Открытие файла после завершения
-os.startfile(output_file)
-
 print(f"Код файлов сохранён в {output_file} и открыт в текстовом редакторе.")
