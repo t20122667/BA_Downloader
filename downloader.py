@@ -594,7 +594,14 @@ def collect_video_links(
             collector_done_event.set()
 
         stop_collecting_flag = False
-        _emit_lead_status()
+        if lead_state is not None:
+            try:
+                lead_state["limit"] = _resolve_lead_limit(prefetch_limit)
+                update_ui = lead_state.get("update_ui")
+                if callable(update_ui):
+                    update_ui()
+            except Exception as e:
+                write_log(f"Не удалось обновить индикатор опережения сбора: {e}", log_type="error")
         is_collecting_links = False
 
 
@@ -1318,3 +1325,5 @@ def download_video_sequential(driver, root, video_link, download_folder, pause_e
         write_log(f"Ошибка при обработке видео {video_link}: {e}", log_type="error")
         save_failed_link(video_link)
         return DOWNLOAD_STATUS_FAILED
+
+

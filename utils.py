@@ -4,8 +4,11 @@ import json
 import os
 import queue
 import subprocess
+import pickle
 import time
 import threading
+import re
+from urllib.parse import urljoin
 import tkinter as tk
 import webbrowser
 from email.utils import parsedate_to_datetime
@@ -191,6 +194,354 @@ def select_download_folder(download_folder_var):
 
 
 # ======================= Функции для работы с чёрным списком =======================
+
+SECONDARY_BLACKLIST_FILE = "friends_video_blacklist.txt"
+SECONDARY_BLACKLIST_REVIEW_FILE = "friends_video_not_in_blacklist.txt"
+
+
+def _load_saved_cookies_into_session(session: requests.Session):
+    if not os.path.exists(cookies_path):
+        write_log("Cookies не найдены. Для friends-страниц сначала пройдите авторизацию и нажмите 'Проверить авторизацию'.", log_type="error")
+        return
+
+    try:
+        with open(cookies_path, "rb") as f:
+            cookies = pickle.load(f)
+    except Exception as e:
+        write_log(f"Не удалось прочитать cookies из {cookies_path}: {e}", log_type="error")
+        return
+
+    loaded_count = 0
+    for cookie in cookies:
+        name = cookie.get("name")
+        value = cookie.get("value")
+        if not name or value is None:
+            continue
+
+        domain = (cookie.get("domain") or "beautifulagony.com").lstrip(".")
+        path = cookie.get("path") or "/"
+
+        try:
+            session.cookies.set(name, value, domain=domain, path=path)
+            loaded_count += 1
+        except Exception:
+            try:
+                session.cookies.set(name, value)
+                loaded_count += 1
+            except Exception:
+                pass
+
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://beautifulagony.com/",
+    })
+
+    write_log(f"Загружено cookies в requests.Session: {loaded_count}", log_type="info")
+
+
+def _page_looks_like_login_or_guest(soup: BeautifulSoup) -> bool:
+    text = soup.get_text(" ", strip=True).lower()
+    if "page=login" in text:
+        return True
+    markers = ["login", "username", "userpass", "captcha"]
+    return sum(1 for marker in markers if marker in text) >= 3
+
+
+def _transform_video_filename_to_name(original_name: str) -> str:
+    base_name, ext = os.path.splitext(original_name)
+    match = re.match(r"^[A-Za-z](\d{4})[A-Za-z0-9]+-([A-Za-z]\d+)$", base_name)
+    if not match:
+        return original_name
+
+    participant_number = match.group(1)
+    video_part = match.group(2)
+    return f"{participant_number}-{video_part}{ext}"
+
+
+def _extract_four_digit_numbers_from_text(text: str):
+    return set(re.findall(r"\b\d{4}\b", text or ""))
+
+
+def _extract_artist_numbers_from_player_soup(soup: BeautifulSoup):
+    numbers = set()
+
+    for artist_block in soup.find_all("div", class_="artistinfo"):
+        numbers.update(_extract_four_digit_numbers_from_text(artist_block.get_text(" ", strip=True)))
+
+    if numbers:
+        return numbers
+
+    for heading in soup.find_all(["h1", "h2", "h3"]):
+        heading_text = heading.get_text(" ", strip=True)
+        if "Artist" in heading_text or "Artists" in heading_text:
+            numbers.update(_extract_four_digit_numbers_from_text(heading_text))
+
+    return numbers
+
+
+def _normalize_artist_label(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def _extract_artist_labels_from_player_soup(soup: BeautifulSoup):
+    labels = []
+    seen = set()
+
+    for artist_block in soup.find_all("div", class_="artistinfo"):
+        text = _normalize_artist_label(artist_block.get_text(" ", strip=True))
+        if text and text not in seen:
+            seen.add(text)
+            labels.append(text)
+
+    if labels:
+        return labels
+
+    for heading in soup.find_all(["h1", "h2", "h3"]):
+        heading_text = _normalize_artist_label(heading.get_text(" ", strip=True))
+        if heading_text and ("Artist" in heading_text or "Artists" in heading_text) and heading_text not in seen:
+            seen.add(heading_text)
+            labels.append(heading_text)
+
+    return labels
+
+
+def _extract_player_urls_from_friends_soup(soup: BeautifulSoup, base_url: str):
+    player_urls = []
+    seen = set()
+
+    for link in soup.find_all("a", href=True):
+        href = (link.get("href") or "").strip()
+        if "page=player" not in href or "media_id=" not in href:
+            continue
+
+        full_url = urljoin(base_url + "/", href)
+        if full_url in seen:
+            continue
+
+        seen.add(full_url)
+        player_urls.append(full_url)
+
+    return player_urls
+
+
+def _transform_secondary_blacklist_filename_to_name(original_name: str):
+    base_name = os.path.splitext(os.path.basename(original_name or ""))[0]
+    match = re.match(r"^[A-Za-z](\d{4})[A-Za-z0-9]*-([A-Za-z]\d+)$", base_name)
+    if not match:
+        return ""
+
+    participant_number = match.group(1)
+    video_part = match.group(2).upper()
+    return f"{video_part}-{participant_number}"
+
+
+
+def _extract_video_title_from_player_soup(soup: BeautifulSoup, player_url: str):
+    video_source = soup.select_one("video#baVideoPlayer source[src]")
+    if video_source:
+        source_url = (video_source.get("src") or "").strip()
+        if source_url:
+            original_name = os.path.basename(source_url.split("?", 1)[0])
+            transformed_name = _transform_secondary_blacklist_filename_to_name(original_name)
+            if transformed_name:
+                return transformed_name
+            if original_name:
+                return os.path.splitext(original_name)[0]
+
+    download_link = soup.find("a", class_="download_links_href")
+    if download_link and download_link.get("href"):
+        original_name = os.path.basename(download_link["href"].split("?", 1)[0])
+        transformed_name = _transform_secondary_blacklist_filename_to_name(original_name)
+        if transformed_name:
+            return transformed_name
+        if original_name:
+            return os.path.splitext(original_name)[0]
+
+    selectors = [
+        ("div", {"id": "playerinfo"}),
+        ("div", {"class": "playerinfo"}),
+        ("div", {"class": "title"}),
+        ("h1", {}),
+        ("h2", {}),
+    ]
+
+    for tag_name, attrs in selectors:
+        elements = soup.find_all(tag_name, attrs=attrs) if attrs else soup.find_all(tag_name)
+        for element in elements:
+            text = element.get_text(" ", strip=True)
+            if not text:
+                continue
+            if text.lower().startswith("artists "):
+                continue
+            if "download" in text.lower() and "mark as seen" in text.lower():
+                continue
+            return text
+
+    if soup.title and soup.title.get_text(strip=True):
+        return soup.title.get_text(" ", strip=True)
+
+    return player_url
+
+
+def create_secondary_blacklist_from_friends(
+    main_blacklist_file="blacklist.txt",
+    output_file=SECONDARY_BLACKLIST_FILE,
+    review_output_file=SECONDARY_BLACKLIST_REVIEW_FILE,
+    pause_event=None,
+):
+    from browser import begin_driver_session, end_driver_session, driver
+    main_blacklist = load_blacklist(main_blacklist_file)
+    if not main_blacklist:
+        write_log(
+            f"Основной чёрный список пуст или не найден: {main_blacklist_file}. Второй список будет пустым.",
+            log_type="info",
+        )
+
+    if not begin_driver_session("secondary_blacklist", quiet=True):
+        write_log("Не удалось получить доступ к открытому браузеру для создания второго чёрного списка.", log_type="error")
+        return {"matched_titles": [], "review_entries": []}
+
+
+    base_url = "https://beautifulagony.com"
+    current_offset = 0
+    processed_player_urls = set()
+    matched_titles = []
+    matched_titles_seen = set()
+    review_entries = []
+    review_entries_seen = set()
+
+    try:
+        while True:
+            if pause_event is not None:
+                pause_event.wait()
+
+            page_url = f"{base_url}/public/main.php?page=view&mode=friends&offset={current_offset}"
+            write_log(f"Второй чёрный список – загрузка страницы friends offset={current_offset}...", log_type="page")
+
+            try:
+                driver.get(page_url)
+                soup = BeautifulSoup(driver.page_source, "html.parser")
+            except Exception as e:
+                write_log(f"Второй чёрный список – ошибка загрузки {page_url}: {e}", log_type="error")
+                break
+
+            if _page_looks_like_login_or_guest(soup):
+                write_log(
+                    "Второй чёрный список – friends-страница открылась как гостевая/логин-страница. "
+                    "Сначала выполните авторизацию в открытом браузере.",
+                    log_type="error",
+                )
+                break
+
+            player_urls = _extract_player_urls_from_friends_soup(soup, base_url)
+            if not player_urls:
+                write_log(
+                    f"Второй чёрный список – на странице friends offset={current_offset} ссылки на видео не найдены. Завершаем обход.",
+                    log_type="info",
+                )
+                break
+
+            write_log(
+                f"Второй чёрный список – на странице friends offset={current_offset} найдено {len(player_urls)} ссылок на видео.",
+                log_type="info",
+            )
+
+            page_matches = 0
+            page_review = 0
+
+            for player_url in player_urls:
+                if pause_event is not None:
+                    pause_event.wait()
+
+                if player_url in processed_player_urls:
+                    continue
+                processed_player_urls.add(player_url)
+
+                try:
+                    driver.get(player_url)
+                    player_soup = BeautifulSoup(driver.page_source, "html.parser")
+                except Exception as e:
+                    write_log(f"Второй чёрный список – ошибка загрузки страницы видео {player_url}: {e}", log_type="error")
+                    continue
+
+                if _page_looks_like_login_or_guest(player_soup):
+                    write_log(
+                        f"Второй чёрный список – страница видео требует авторизацию: {player_url}",
+                        log_type="error",
+                    )
+                    continue
+
+                artist_numbers = _extract_artist_numbers_from_player_soup(player_soup)
+                artist_labels = _extract_artist_labels_from_player_soup(player_soup)
+                if not artist_numbers and not artist_labels:
+                    write_log(
+                        f"Второй чёрный список – на странице видео не найдены данные участников: {player_url}",
+                        log_type="info",
+                    )
+                    continue
+
+                video_title = _extract_video_title_from_player_soup(player_soup, player_url).strip()
+                if not video_title:
+                    video_title = player_url
+
+                matched_numbers = sorted(artist_numbers & main_blacklist)
+                if matched_numbers:
+                    if video_title not in matched_titles_seen:
+                        matched_titles_seen.add(video_title)
+                        matched_titles.append(video_title)
+                        page_matches += 1
+
+                    write_log(
+                        f"Второй чёрный список – совпадение для '{video_title}': номера {', '.join(matched_numbers)}.",
+                        log_type="info",
+                    )
+                    continue
+
+                participants_text = "; ".join(artist_labels) if artist_labels else "Участники не определены"
+                review_line = f"{video_title} | {participants_text}"
+                if review_line not in review_entries_seen:
+                    review_entries_seen.add(review_line)
+                    review_entries.append(review_line)
+                    page_review += 1
+
+                write_log(
+                    f"Второй чёрный список – без совпадений: '{video_title}' | {participants_text}.",
+                    log_type="info",
+                )
+
+            write_log(
+                f"Второй чёрный список – friends offset={current_offset}: совпадений на странице {page_matches}, без совпадений {page_review}, всего совпадений {len(matched_titles)}, всего без совпадений {len(review_entries)}.",
+                log_type="info",
+            )
+            current_offset += 20
+
+    finally:
+        end_driver_session("secondary_blacklist")
+
+    try:
+        with open(output_file, "w", encoding="utf-8") as f:
+            for title in matched_titles:
+                f.write(title + "\n")
+        write_log(
+            f"Второй чёрный список создан. Найдено видео: {len(matched_titles)}. Файл: {output_file}",
+            log_type="info",
+        )
+    except Exception as e:
+        write_log(f"Ошибка записи второго чёрного списка {output_file}: {e}", log_type="error")
+
+    try:
+        with open(review_output_file, "w", encoding="utf-8") as f:
+            for line in review_entries:
+                f.write(line + "\n")
+        write_log(
+            f"Список видео без попадания во второй чёрный список создан. Найдено видео: {len(review_entries)}. Файл: {review_output_file}",
+            log_type="info",
+        )
+    except Exception as e:
+        write_log(f"Ошибка записи файла {review_output_file}: {e}", log_type="error")
+
+    return {"matched_titles": matched_titles, "review_entries": review_entries}
+
 def create_blacklist_for_mode(mode):
     base_url = "https://beautifulagony.com/public/main.php?page=view&mode={}&offset={}"
     blacklist = set()
